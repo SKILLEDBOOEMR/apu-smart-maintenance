@@ -70,7 +70,14 @@ async def analyze(
             raise HTTPException(status_code=415, detail="Image content type does not match the uploaded file.")
 
     analysis = analyze_report(image_bytes, mime_type, text)
-    return {
+
+    if analysis.is_valid_fault is False:
+        raise HTTPException(
+            status_code=422,
+            detail="The provided image and text do not indicate a valid maintenance fault.",
+        )
+
+    res = {
         "success": True,
         "status": "analyzed",
         "analysis": analysis.model_dump(),
@@ -81,3 +88,5 @@ async def analyze(
             "longitude": longitude,
         },
     }
+
+    return res

@@ -21,6 +21,8 @@ Your job:
    and a rough estimated_effort (e.g. "30-60 minutes").
 7. Set confidence between 0 and 1 for how sure you are of the category and severity.
    Use lower values for blurry, partial or ambiguous input.
+8. If in the picture you see nothing wrong but the text describes a problem, ignore 
+the text since we need factual evidence from the image to confirm a fault. If the text describes a problem but the image shows nothing, set is_valid_fault to false and explain in problem_summary that the image shows no issue.
 
 Rules: do not invent details that are not visible or stated. If both photo and text
 are given, combine them. Respond only with JSON matching the schema."""
