@@ -30,8 +30,8 @@ async def analyze(
     longitude: float | None = Form(default=None),
 ):
     text = text.strip() if text else None
-    if not text and image is None:
-        raise HTTPException(status_code=422, detail="Provide a text description or an image.")
+    if image is None:
+        raise HTTPException(status_code=422, detail="Provide an image.")
 
     if (latitude is None) != (longitude is None):
         raise HTTPException(status_code=422, detail="Latitude and longitude must be provided together.")
@@ -41,8 +41,18 @@ async def analyze(
         raise HTTPException(status_code=422, detail="Longitude must be between -180 and 180.")
 
     loc = locate_user(latitude, longitude)
-    if loc.get("zone") == "outside_campus":
+    if loc.get("zone") == "off_campus":
         raise HTTPException(status_code=422, detail="Location is outside the campus area.")
+
+    # If coordinates are provided and a building was specified, verify user is in/near that building
+    if latitude is not None and building:
+        detected_buildings = [b.lower() for b in loc.get("buildings", [])]
+        # Also check near_building buffer list if needed
+        if building.strip().lower() not in detected_buildings and loc.get("zone") not in ("campus_outdoor", "near_building"):
+            raise HTTPException(
+                status_code=422, 
+                detail=f"Location coordinates do not match the specified building '{building}'."
+                )
 
     image_bytes = None
     mime_type = None
