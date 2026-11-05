@@ -1,6 +1,7 @@
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from .gemini_client import analyze_report
 from .location import locate_user
+from app import supabase as db
 
 app = FastAPI(title="Campus Maintenance API")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -19,6 +20,11 @@ def _image_mime_type(data: bytes) -> str | None:
 def health():
     return {"status": "ok"}
 
+@app.get("/buildings")
+def buildings():
+    return ["Tower A", "Tower B", "Tower C", "Tower D", "Tower E"]
+
+@app.get("/dashboard/summary")
 
 @app.post("/analyze")
 async def analyze(
@@ -70,12 +76,28 @@ async def analyze(
             raise HTTPException(status_code=415, detail="Image content type does not match the uploaded file.")
 
     analysis = analyze_report(image_bytes, mime_type, text)
+    print(analysis)
 
     if analysis.is_valid_fault is False:
         raise HTTPException(
             status_code=422,
             detail="The provided image and text do not indicate a valid maintenance fault.",
         )
+
+    data = analysis.model_dump()
+
+    dup = db.find_duplicate(building, analysis.category) if building else None
+    if dup:
+        db.add_duplicate_report(dup)
+        raise HTTPException(
+            status_code=409,
+            detail="A similar work order has already been reported.",
+        )
+
+    stored = db.upload_image(image_bytes, image.filename, mime_type)
+    row = db.build_row(data, text, building, room, latitude, longitude, stored["url"])
+    work_order = db.create_work_order(row)
+
 
     res = {
         "success": True,
