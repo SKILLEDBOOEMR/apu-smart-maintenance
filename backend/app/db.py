@@ -96,47 +96,43 @@ def signed_image_url(path: str, seconds: int = 3600) -> Optional[str]:
 # ---------------------------------------------------------------------------
 def build_row(
     analysis: dict,
+    title: Optional[str],
     text: Optional[str],
     building: Optional[str],
     room: Optional[str],
     latitude: Optional[float],
     longitude: Optional[float],
-    image_url: Optional[str],
+    image_url: Optional[str] = None,
     image_path: Optional[str] = None,
     location_status: Optional[str] = None,
 ) -> dict:
-    """
-    analysis = the Gemini result, for example:
-      {"category": "Plumbing", "severity": "Critical", "title": "Ceiling leak",
-       "suggested_team": "...", "repair_steps": ["step 1", "step 2"]}
-    """
-    category = analysis.get("category")
+    # Capitalize category to match Supabase CHECK constraints (e.g. "plumbing" -> "Plumbing")
+    raw_category = analysis.get("category", "")
+    category = raw_category.strip().title() if raw_category else "General Maintenance"
+    
+    # Fix 'It / Network' capitalization quirk if Gemini returns lowercase/different casing
+    if "it" in category.lower() or "network" in category.lower():
+        category = "IT / Network"
+
     severity = analysis.get("severity")
     steps = analysis.get("repair_steps") or []
+    
+    priority = compute_priority(severity, category)
 
     row = {
         "issue_description": text or analysis.get("title") or "(photo only report)",
+        "title": title or analysis.get("title") or "Maintenance Request",
         "building": building or "Unknown",
         "room": room or "Unknown",
         "category": category,
-        "severity": severity,
-        "priority": compute_priority(severity, category),
+        "severity": severity.capitalize() if severity else "Medium", # Ensures severity is capitalized too ('High', 'Low', etc.)
+        "priority": priority,
         "status": "Open",
         "repair_steps": steps if HAS_EXTRA_COLUMNS else "\n".join(steps),
         "image_url": image_url,
-        "suggested_team": analysis.get("suggested_team") or TEAM_BY_CATEGORY.get(category),
-        "assigned_team": TEAM_BY_CATEGORY.get(category),
         "latitude": latitude,
         "longitude": longitude,
     }
-
-    if HAS_EXTRA_COLUMNS:
-        row["building"] = building          # these columns accept null after the changes
-        row["room"] = room
-        row["title"] = analysis.get("title")
-        row["image_path"] = image_path
-        row["location_status"] = location_status
-
     return row
 
 # ---------------------------------------------------------------------------
@@ -185,14 +181,14 @@ def list_work_orders(
     limit: int = 20,
 ) -> dict:
     """For the admin dashboard table.""" #have location_status after room
-    query = get_client().table(TABLE).select("id, title:issue_description, category, severity,  priority, status, building, room, assigned_team, report_count, email_status, email_sent_at, created_at  ", count="exact")
+    query = get_client().table(TABLE).select("id, title:issue_description, category, severity,  priority, status, building, room, assigned_team_id, report_count, email_status, email_sent_at, created_at  ", count="exact")
     for column, value in (("status", status), ("priority", priority),
                           ("category", category), ("building", building)):
         if value:
             query = query.eq(column, value)
     start = (page - 1) * limit
     res = query.order("created_at", desc=True).range(start, start + limit - 1).execute()
-    data = [{**row,"location_status": row.get("location_status", "Unknown"), "team_id": row.get("assigned_team", None)} for row in res.data] 
+    data = [{**row,"location_status": row.get("location_status", "Unknown"), "team_id": row.get("assigned_team_id", None)} for row in res.data] 
 
 
     return {"page": page, "limit": limit, "total": res.count, "work_orders": res.data}

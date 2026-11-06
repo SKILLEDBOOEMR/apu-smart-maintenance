@@ -1,25 +1,163 @@
--- Table for work_orders --
-CREATE TABLE work_orders (
-    id SERIAL PRIMARY KEY, -- Unique auto-incrementing ID number for each work order ticket
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL, -- Timestamp of when the work order was created
-    issue_description TEXT NOT NULL, -- Detailed text description of the reported maintenance issue
-    building TEXT NOT NULL, -- The name of the building or zone (e.g., 'Tower A', 'The whole school')
-    room TEXT NOT NULL, -- Specific room or area identifier within the building
-    category TEXT, -- Categorized type of issue (eg. plumbing, electrical, carpentry)
-    severity TEXT, -- Severity or priority level of the maintenance request
-    repair_steps TEXT, -- Recommended or generated steps required to fix the issue
-    image_url TEXT, -- Public storage URL pointing to the uploaded photo of the issue
-    status TEXT DEFAULT 'Open' NOT NULL, -- Current progress status of the repair (defaults to 'Open' until resolved)
-    latitude DOUBLE PRECISION, -- Geographic latitude coordinate for the issue location
-    longitude DOUBLE PRECISION -- Geographic longitude coordinate for the issue location
+-- Table for users --
+ CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    auth_user_id UUID UNIQUE NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'student'
+        CHECK (role IN ('student', 'admin')),
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
+
+-- Table for maintenance_teams --
+CREATE TABLE maintenance_teams(
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    team_name TEXT NOT NULL UNIQUE,
+    category TEXT NOT NULL UNIQUE CHECK (
+        category IN (
+            'Plumbing',
+            'Electrical',
+            'HVAC',
+            'Structural',
+            'General Maintenance',
+            'IT / Network'
+        )
+    ),
+    email TEXT
+);
+
+-- Rows for maintenance_teams --
+INSERT INTO maintenance_teams (team_name, category)
+VALUES
+('Campus Plumbing and Waterworks Crew', 'Plumbing'),
+('Facilities Electrical and Power Techs', 'Electrical'),
+('Climate Control and Ventilation Specialists', 'HVAC'),
+('Campus Facilities Engineering', 'Structural'),
+('General Facilities Handyman', 'General Maintenance'),
+('Campus IT Infrastructure Support', 'IT / Network');
+
+-- Table for work_orders --
+create table public.work_orders (
+  id uuid not null default gen_random_uuid (),
+  title text not null,
+  issue_description text not null,
+  building text not null,
+  room text null,
+  category text not null,
+  severity text not null,
+  assigned_team_id uuid null,
+  repair_steps text null,
+  image_url text null,
+  ai_confidence numeric(4, 3) null,
+  status text not null default 'Open'::text,
+  latitude double precision null,
+  longitude double precision null,
+  created_at timestamp with time zone not null default now(),
+  updated_at timestamp with time zone not null default now(),
+  priority text null default 'Medium'::text,
+  report_count integer null default 1,
+  email_status text null,
+  email_sent_at timestamp with time zone null,
+  location_status text null default 'Unknown'::text,
+  image_path text null,
+  constraint work_orders_pkey primary key (id),
+  constraint work_orders_assigned_team_id_fkey foreign KEY (assigned_team_id) references maintenance_teams (id),
+  constraint work_orders_check check (
+    (
+      (
+        (latitude is null)
+        and (longitude is null)
+      )
+      or (
+        (
+          (latitude >= ('-90'::integer)::double precision)
+          and (latitude <= (90)::double precision)
+        )
+        and (
+          (longitude >= ('-180'::integer)::double precision)
+          and (longitude <= (180)::double precision)
+        )
+      )
+    )
+  ),
+  constraint work_orders_priority_check check (
+    (
+      priority = any (
+        array[
+          'Low'::text,
+          'Medium'::text,
+          'High'::text,
+          'Critical'::text
+        ]
+      )
+    )
+  ),
+  constraint work_orders_severity_check check (
+    (
+      severity = any (
+        array[
+          'Critical'::text,
+          'High'::text,
+          'Medium'::text,
+          'Low'::text
+        ]
+      )
+    )
+  ),
+  constraint work_orders_ai_confidence_check check (
+    (
+      (ai_confidence >= (0)::numeric)
+      and (ai_confidence <= (1)::numeric)
+    )
+  ),
+  constraint work_orders_status_check check (
+    (
+      status = any (
+        array[
+          'Open'::text,
+          'In Progress'::text,
+          'Completed'::text,
+          'Cancelled'::text
+        ]
+      )
+    )
+  ),
+  constraint work_orders_category_check check (
+    (
+      category = any (
+        array[
+          'Plumbing'::text,
+          'Electrical'::text,
+          'HVAC'::text,
+          'Structural'::text,
+          'General Maintenance'::text,
+          'IT / Network'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+-- Table for student_reports --
+CREATE TABLE student_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    work_order_id UUID NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+    issue_description TEXT NOT NULL,
+    image_url TEXT,
+    building TEXT NOT NULL,
+    room TEXT,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    UNIQUE (student_id, work_order_id));
 
 -- Table for map_coordinates --
 CREATE TABLE map_coordinates (
-    id SERIAL PRIMARY KEY, -- Work order ticket
-    feature_name TEXT, -- The name of the building or zone (e.g., 'Tower A', 'The whole school')
-    polygon_data JSONB NOT NULL, -- Stores the full polygon type and coordinate array as a JSON object
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL -- Automatically generates and stores the timestamp when the record is created
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    feature_name TEXT UNIQUE NOT NULL,
+    polygon_data JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
 -- Rows in map_coordinates --

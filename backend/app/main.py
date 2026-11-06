@@ -58,6 +58,7 @@ def view_work_order(work_order_id: str):
 
 @app.post("/analyze")
 async def analyze(
+    title: str | None = Form(default=None),
     text: str | None = Form(default=None),
     image: UploadFile | None = File(default=None),
     building: str | None = Form(default=None),
@@ -130,7 +131,16 @@ async def analyze(
         )
 
     stored = db.upload_image(image_bytes, image.filename, mime_type)
-    row = db.build_row(data, text, building, room, latitude, longitude, stored["url"])
+    row = db.build_row(
+        analysis=data,
+        title=data.get("title"), 
+        text=text,
+        building=building,
+        room=room,
+        latitude=latitude,
+        longitude=longitude,
+        image_url=stored["url"]
+    )
     work_order = db.create_work_order(row)
 
 
