@@ -1,7 +1,8 @@
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from .gemini_client import analyze_report
-from .location import locate_user
-from app import supabase as db
+from .location import locate_user_one_building
+from app import db as db
+import re
 
 app = FastAPI(title="Campus Maintenance API")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -15,6 +16,18 @@ def _image_mime_type(data: bytes) -> str | None:
         return "image/png"
     return None
 
+def _building_sort_key(name: str):
+    n = name.strip()
+    low = n.lower()
+    if low.startswith("tower"):
+        return (0, n.upper(), 0)                      # Tower A, B, C ...
+    if low.startswith("dorm"):
+        m = re.search(r"\d+", n)
+        return (1, "", int(m.group()) if m else 1)    # Dorm, Dorm 2, Dorm 3 ... (10 after 9)
+    if "whole" in low:
+        return (3, low, 0)                            # "The whole school" always last
+    return (2, low, 0)     
+
 
 @app.get("/health")
 def health():
@@ -22,9 +35,26 @@ def health():
 
 @app.get("/buildings")
 def buildings():
-    return ["Tower A", "Tower B", "Tower C", "Tower D", "Tower E"]
+    names = [b["feature_name"] for b in db.list_building() if b.get("feature_name")]
+    names = [n for n in names if n.strip().lower() != "the whole school"]
+    return sorted(set(names), key=_building_sort_key)
 
-@app.get("/dashboard/summary")
+@app.get("/work-orders")
+def fetch_work_orders(
+    feature_name: str | None = None,
+    polygon_data: dict | None = None,
+    page: int = 1,
+    limit: int = 20,
+):
+    work_orders = db.list_work_orders()
+    return work_orders
+
+@app.get("/work-orders/{work_order_id}")
+def view_work_order(work_order_id: str):
+    work_order = db.view_individual_work_order(work_order_id)
+    if not work_order:
+        raise HTTPException(status_code=404, detail="Work order not found.")
+    return work_order
 
 @app.post("/analyze")
 async def analyze(
@@ -46,19 +76,24 @@ async def analyze(
     if longitude is not None and not -180 <= longitude <= 180:
         raise HTTPException(status_code=422, detail="Longitude must be between -180 and 180.")
 
-    loc = locate_user(latitude, longitude)
-    if loc.get("zone") == "off_campus":
-        raise HTTPException(status_code=422, detail="Location is outside the campus area.")
+    #fetch the location status based on the provided coordinates and building
+    location_data = db.get_building(building) if building else None
+    if location_data is None and building:
+        location_data = db.get_building("The whole school") 
+        pass
+    elif location_data:
+        check_loc = locate_user_one_building(latitude, longitude, location_data.get("polygon_data"))
+    else:
+        raise HTTPException(
+            status_code=422, 
+            detail=f"Please provide a valid building."
+            )
 
-    # If coordinates are provided and a building was specified, verify user is in/near that building
-    if latitude is not None and building:
-        detected_buildings = [b.lower() for b in loc.get("buildings", [])]
-        # Also check near_building buffer list if needed
-        if building.strip().lower() not in detected_buildings and loc.get("zone") not in ("campus_outdoor", "near_building"):
-            raise HTTPException(
-                status_code=422, 
-                detail=f"Location coordinates do not match the specified building '{building}'."
-                )
+    if check_loc["zone"] == "outside":
+        raise HTTPException(
+            status_code=422,
+            detail=f"You are not at {building}. Please be at the location.",
+        )
 
     image_bytes = None
     mime_type = None

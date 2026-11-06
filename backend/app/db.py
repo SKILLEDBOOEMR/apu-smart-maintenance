@@ -16,6 +16,7 @@ from supabase import Client, create_client
 # SETTINGS
 # ---------------------------------------------------------------------------
 TABLE = "work_orders"
+BUILDING_TABLE = "map_coordinates"
 IMAGE_BUCKET = os.environ.get("SUPABASE_BUCKET", "maintenance-images")
 
 # False = table as your friend first wrote it (repair_steps is text, building/room
@@ -138,6 +139,24 @@ def build_row(
 
     return row
 
+# ---------------------------------------------------------------------------
+# Building ORDERS: read_all / read_one
+# ---------------------------------------------------------------------------
+
+def get_building(feature_name: str) -> Optional[dict]:
+    res = get_client().table(BUILDING_TABLE).select("*").eq("feature_name", feature_name).limit(1).execute()
+    return res.data[0] if res.data else None
+
+def list_building(feature_name: Optional[str] = None) -> list:
+    """Fetching all feature names from the building table."""
+    query = get_client().table(BUILDING_TABLE).select("feature_name")
+    
+    if feature_name:
+        query = query.eq("feature_name", feature_name)
+        
+    res = query.execute()
+    
+    return res.data
 
 # ---------------------------------------------------------------------------
 # WORK ORDERS: create / read / update
@@ -165,15 +184,22 @@ def list_work_orders(
     page: int = 1,
     limit: int = 20,
 ) -> dict:
-    """For the admin dashboard table."""
-    query = get_client().table(TABLE).select("*", count="exact")
+    """For the admin dashboard table.""" #have location_status after room
+    query = get_client().table(TABLE).select("id, title:issue_description, category, severity,  priority, status, building, room, assigned_team, report_count, email_status, email_sent_at, created_at  ", count="exact")
     for column, value in (("status", status), ("priority", priority),
                           ("category", category), ("building", building)):
         if value:
             query = query.eq(column, value)
     start = (page - 1) * limit
     res = query.order("created_at", desc=True).range(start, start + limit - 1).execute()
+    data = [{**row,"location_status": row.get("location_status", "Unknown"), "team_id": row.get("assigned_team", None)} for row in res.data] 
+
+
     return {"page": page, "limit": limit, "total": res.count, "work_orders": res.data}
+
+def view_individual_work_order(work_order_id) -> Optional[dict]:
+    res = get_client().table(TABLE).select("issue_description, image_url, repair_steps, latitude, longitude, updated_at:created_at").eq("id", work_order_id).limit(1).execute()
+    return res.data[0] if res.data else None
 
 
 # ---------------------------------------------------------------------------
@@ -205,17 +231,20 @@ def add_duplicate_report(work_order: dict) -> Optional[dict]:
 # Inserts one test row, reads it back, then deletes it.
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    test_analysis = {
-        "category": "Plumbing",
-        "severity": "High",
-        "title": "Test ceiling leak",
-        "repair_steps": ["Shut off the water valve.", "Cover electronics."],
-    }
-    row = build_row(test_analysis, "Smoke test, safe to delete", "Tower B", "B-28",
-                    3.0553086, 101.699972, image_url=None)
-    created = create_work_order(row)
-    print("Inserted:", created["id"], created["priority"])
-    print("Fetched: ", get_work_order(created["id"])["issue_description"])
-    print("Listed:  ", list_work_orders(limit=1)["total"], "work orders in total")
-    get_client().table(TABLE).delete().eq("id", created["id"]).execute()
-    print("Deleted the test row. Supabase connection works.")
+    # test_analysis = {
+    #     "category": "Plumbing",
+    #     "severity": "High",
+    #     "title": "Test ceiling leak",
+    #     "repair_steps": ["Shut off the water valve.", "Cover electronics."],
+    # }
+    # row = build_row(test_analysis, "Smoke test, safe to delete", "Tower B", "B-28",
+    #                 3.0553086, 101.699972, image_url=None)
+    # created = create_work_order(row)
+    # print("Inserted:", created["id"], created["priority"])
+    # print("Fetched: ", get_work_order(created["id"])["issue_description"])
+    # print("Listed:  ", list_work_orders(limit=1)["total"], "work orders in total")
+    # get_client().table(TABLE).delete().eq("id", created["id"]).execute()
+    # print("Deleted the test row. Supabase connection works.")
+    # buildings = list_building_orders()
+    # print(buildings)
+    pass
