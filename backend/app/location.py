@@ -51,6 +51,6 @@ def locate_user_one_building(latitude, longitude, polygon_data, name=None, toler
 if __name__ == "__main__":
     lat = float(input("Latitude:  "))
     lng = float(input("Longitude: "))
-    result = locate_user(lat, lng)
+    result = locate_user_one_building(lat, lng, polygon_data=None, name="Test Building")
     print(result["message"])
     print(result)

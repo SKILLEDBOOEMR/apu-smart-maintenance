@@ -3,11 +3,22 @@ from .gemini_client import analyze_report
 from .location import locate_user_one_building
 from app import db as db
 import re
+from pydantic import BaseModel
+import uuid
 
 app = FastAPI(title="Campus Maintenance API")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    role: str | None = "user"  # Default role is "user"
 
 def _image_mime_type(data: bytes) -> str | None:
     if data.startswith(b"\xff\xd8\xff"):
@@ -55,6 +66,63 @@ def view_work_order(work_order_id: str):
     if not work_order:
         raise HTTPException(status_code=404, detail="Work order not found.")
     return work_order
+
+@app.get("/requests/mine")
+def fetch_my_requests(
+    student_id: uuid.UUID,
+    page: int = 1,
+    limit: int = 20,
+):
+    work_orders = db.list_work_orders_by_student_id(student_id, page, limit)
+    return work_orders
+
+@app.post("/login")
+async def login(credentials: LoginRequest):
+    try:
+        # Authenticate using Supabase Auth
+        auth_response = db.get_client().auth.sign_in_with_password({
+            "email": credentials.email,
+            "password": credentials.password
+        })
+        
+        if not auth_response.user:
+            raise HTTPException(status_code=400, detail="Invalid email or password")
+
+        return {
+            "success": True,
+            "message": "Login successful",
+            "email": credentials.email,
+            "user_id": auth_response.user.id
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+
+@app.post("/signup")
+async def signup(credentials: SignupRequest):
+    try:
+        # Register user and pass full_name into Supabase user metadata
+        auth_response = db.get_client().auth.sign_up({
+            "email": credentials.email,
+            "password": credentials.password,
+            "options": {
+                "data": {
+                    "full_name": credentials.full_name
+                }
+            }
+        })
+        
+        if not auth_response.user:
+            raise HTTPException(status_code=400, detail="Could not create user in Supabase Auth")
+
+        return {
+            "success": True,
+            "message": "Account created successfully!",
+            "email": credentials.email
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/analyze")
 async def analyze(

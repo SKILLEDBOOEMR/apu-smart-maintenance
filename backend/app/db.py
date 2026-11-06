@@ -16,6 +16,7 @@ from supabase import Client, create_client
 # SETTINGS
 # ---------------------------------------------------------------------------
 TABLE = "work_orders"
+STUDENT_TABLE = "studen_reports"
 BUILDING_TABLE = "map_coordinates"
 IMAGE_BUCKET = os.environ.get("SUPABASE_BUCKET", "maintenance-images")
 
@@ -161,16 +162,13 @@ def create_work_order(row: dict) -> dict:
     res = get_client().table(TABLE).insert(row).execute()
     return res.data[0]
 
-
 def get_work_order(work_order_id) -> Optional[dict]:
     res = get_client().table(TABLE).select("*").eq("id", work_order_id).limit(1).execute()
     return res.data[0] if res.data else None
 
-
 def update_work_order(work_order_id, fields: dict) -> Optional[dict]:
     res = get_client().table(TABLE).update(fields).eq("id", work_order_id).execute()
     return res.data[0] if res.data else None
-
 
 def list_work_orders(
     status: Optional[str] = None,
@@ -197,6 +195,16 @@ def view_individual_work_order(work_order_id) -> Optional[dict]:
     res = get_client().table(TABLE).select("issue_description, image_url, repair_steps, latitude, longitude, updated_at:created_at").eq("id", work_order_id).limit(1).execute()
     return res.data[0] if res.data else None
 
+def list_work_orders_by_student_id(id: uuid.UUID,page: int = 1, limit: int = 20,) -> Optional[dict]:
+    '''Gets the work order made by the students'''
+    query = get_client().table(STUDENT_TABLE).select("work_order_id").eq("student_id", id).execute()
+    work_order_ids = [row["work_order_id"] for row in query.data]
+    work_orders_query = get_client().table(STUDENT_TABLE).select("title, category, status, building, room", count="exact").in_("id", work_order_ids)
+    
+    start = (page - 1) * limit
+    res = work_orders_query.range(start, start + limit - 1).execute()
+
+    return res.data[0] if res.data else None
 
 # ---------------------------------------------------------------------------
 # DUPLICATES
