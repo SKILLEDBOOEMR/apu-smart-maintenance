@@ -115,6 +115,23 @@ def notify_work_order(work_order_id: str, payload: NotifyPayload):
     db.notify_maintenace_teams(work_order_id)
     return {"success": True, "message": "Maintenance teams notified successfully."}
 
+@app.get("/map") #staff
+def map(uuid: str | None = None):
+    if db.verify_user_role(uuid) != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
+    center = [3.056007378655162, 101.69990037965738]
+    school_polygon_data = db.get_building("The whole school")
+    if not school_polygon_data or not school_polygon_data.get("polygon_data"):
+        raise HTTPException(status_code=404, detail="School boundary data is not available.")
+    unfinished_orders_locations = db.fetch_location_of_reports_not_done()
+
+    return {
+        "center" : center,
+        "school_polygon" : school_polygon_data.get('polygon_data'),
+        "order_locations" : unfinished_orders_locations
+    }
+
+
 @app.get("/requests/mine") #student
 def fetch_my_requests(
     student_id: uuid.UUID,
@@ -199,7 +216,6 @@ async def analyze(
     if text.find("warrenwinarko") == 0: #only for testing purposes, remove this in production
         # Fetch location data from DB
         location_data = db.get_building(building) if building else None
-        print(location_data)
 
         if building and location_data is None:
             location_data = db.get_building("The whole school")

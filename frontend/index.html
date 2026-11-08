@@ -74,6 +74,15 @@ textarea{min-height:90px;resize:vertical}
   opacity: 1;
   margin-top: 0px;
 }
+#map-frame{position:relative;width:100%;max-width:1100px;height:clamp(320px,55vh,560px);margin:22px auto;background: color-mix(in srgb, var(--bg) 90%, var(--ink));;border-radius:14px;overflow:hidden}
+#map{width:100%;height:100%;background: color-mix(in srgb, var(--bg) 90%, var(--mute));}
+.map-legend{position:absolute;right:16px;bottom:16px;z-index:1000;max-width:calc(100% - 32px);padding:14px;border:1px solid #334155;border-radius:12px;background: color-mix(in srgb, var(--bg) 90%, var(--ink));box-shadow:0 12px 30px rgba(0,0,0,.3);color:#e2e8f0;font-size:13px}
+.map-legend-title{margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #334155;font-weight:600;color:var(--mute)}
+.map-legend-list{display:grid;gap:6px}
+.map-legend-item{display:flex;align-items:center;gap:10px;color:var(--mute)}
+.map-legend-dot{width:12px;height:12px;flex:none;border:1px solid rgba(255,255,255,.55);border-radius:50%}
+.map-legend-dot.low{background:#10b981}.map-legend-dot.medium{background:#fbbf24}.map-legend-dot.high{background:#f43f5e}.map-legend-dot.critical{background:#9333ea}
+.map-message{position:absolute;top:12px;left:12px;z-index:1000;max-width:calc(100% - 24px);padding:8px 12px;border-radius:8px;background:var(--card);color:var(--ink);box-shadow:0 2px 10px rgba(0,0,0,.2);font-size:14px}
 
 /* Override the default global .hide just for errors to allow smooth transition */
 .err.hide {
@@ -119,6 +128,8 @@ dialog::backdrop{background:rgba(10,18,32,.58)}
 .detail-steps{padding-left:22px}
 @media(prefers-reduced-motion:no-preference){.done{animation:pop .35s ease-out}@keyframes pop{from{transform:translateY(6px);opacity:0}}}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 <header>
@@ -225,6 +236,19 @@ dialog::backdrop{background:rgba(10,18,32,.58)}
 <section id="admin" class="hide">
   <h1>Here’s what needs attention</h1>
   <p class="lead">Reports from students, newest first. Statuses and counts are loaded from the server.</p>
+  <div id="map-frame">
+    <div id="map" aria-label="Maintenance reports map"></div>
+    <div id="mapMessage" class="map-message" role="status">Loading campus map…</div>
+    <aside class="map-legend" aria-label="Urgency legend">
+      <div class="map-legend-title">Urgency Legend</div>
+      <div class="map-legend-list">
+        <div class="map-legend-item"><span class="map-legend-dot low"></span><span>Low Urgency</span></div>
+        <div class="map-legend-item"><span class="map-legend-dot medium"></span><span>Medium Urgency</span></div>
+        <div class="map-legend-item"><span class="map-legend-dot high"></span><span>High Urgency</span></div>
+        <div class="map-legend-item"><span class="map-legend-dot critical"></span><span>Critical Urgency</span></div>
+      </div>
+    </aside>
+  </div>
   <div class="err hide" id="adminerr" role="alert"></div>
   <div class="stats" id="stats"></div>
   <div class="bar">
@@ -252,6 +276,11 @@ const $ = id => document.getElementById(id);
 const ago = m => m < 60 ? m + " min ago" : m < 1440 ? Math.round(m/60) + " h ago" : Math.round(m/1440) + " d ago";
 
 let issues = [];
+let reportMap = null;
+let reportMapTiles = null;
+let reportMapSchoolBounds = null;
+let reportMapRequest = 0;
+const urgencyColors = {low:"#10b981", medium:"#fbbf24", high:"#f43f5e", critical:"#9333ea"};
 
 async function apiRequest(path, options = {}) {
   let response;
@@ -273,6 +302,98 @@ async function apiRequest(path, options = {}) {
   }
   return data;
 }
+
+function reportBoundsWithMargin(bounds, marginMeters) {
+  const southWest = bounds.getSouthWest();
+  const northEast = bounds.getNorthEast();
+  const middleLatitude = (southWest.lat + northEast.lat) / 2;
+  const latitudeMargin = marginMeters / 111320;
+  const longitudeMargin = marginMeters / (111320 * Math.cos(middleLatitude * Math.PI / 180));
+  return L.latLngBounds(
+    [southWest.lat - latitudeMargin, southWest.lng - longitudeMargin],
+    [northEast.lat + latitudeMargin, northEast.lng + longitudeMargin]
+  );
+}
+
+function fitReportMapToSchool() {
+  if (!reportMap || !reportMapSchoolBounds) return;
+  reportMap.invalidateSize({pan: false});
+  reportMap.setMinZoom(0);
+  reportMap.fitBounds(reportMapSchoolBounds, {padding: [24, 24]});
+  reportMap.setMinZoom(reportMap.getZoom());
+}
+
+async function loadReportMap() {
+  const requestId = ++reportMapRequest;
+  const message = $("mapMessage");
+  message.textContent = "Loading campus map…";
+  message.classList.remove("hide");
+  try {
+    const data = await apiRequest("/map?uuid=" + encodeURIComponent(user.uuid));
+    if (requestId !== reportMapRequest || user?.role !== "admin" || $("admin").classList.contains("hide")) return;
+    if (!data || !data.school_polygon) throw new Error("The API did not return the school boundary.");
+
+    const polygonData = typeof data.school_polygon === "string" ? JSON.parse(data.school_polygon) : data.school_polygon;
+    const boundary = L.geoJSON(polygonData, {
+      style: {color: "#2f5bea", weight: 3, fillColor: "#2f5bea", fillOpacity: 0.08}
+    });
+    const schoolBounds = boundary.getBounds();
+    if (!schoolBounds.isValid()) throw new Error("The school boundary is invalid.");
+
+    reportMapSchoolBounds = schoolBounds;
+    const maxBounds = reportBoundsWithMargin(schoolBounds, 20);
+    if (!reportMap) {
+      reportMap = L.map("map", {maxBounds, maxBoundsViscosity: 1, zoomControl: true});
+      reportMap.setView(schoolBounds.getCenter(), 16);
+      reportMapTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(reportMap);
+    } else {
+      reportMap.setMaxBounds(maxBounds);
+      reportMap.eachLayer(layer => {
+        if (layer !== reportMapTiles) reportMap.removeLayer(layer);
+      });
+    }
+
+    boundary.addTo(reportMap);
+    const orders = Array.isArray(data.order_locations) ? data.order_locations : [];
+    let markerCount = 0;
+    for (const order of orders) {
+      if (order.latitude == null || order.longitude == null) continue;
+      const latitude = Number(order.latitude), longitude = Number(order.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+          latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) continue;
+      const urgency = String(order.priority || order.severity || "Medium").toLowerCase();
+      const color = urgencyColors[urgency] || urgencyColors.medium;
+      const marker = L.circleMarker([latitude, longitude], {
+        radius: 8, color, fillColor: color, fillOpacity: 0.9, weight: 2
+      });
+      const popup = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = order.issue_description || "Maintenance report";
+      const details = document.createElement("div");
+      details.textContent = (order.priority || order.severity || "Medium") + " urgency · " + normalizeStatus(order.status);
+      popup.append(title, details);
+      marker.bindPopup(popup).addTo(reportMap);
+      markerCount++;
+    }
+
+    fitReportMapToSchool();
+    message.textContent = markerCount ? "" : "No unfinished reports with valid locations.";
+    message.classList.toggle("hide", markerCount > 0);
+  } catch (error) {
+    if (requestId !== reportMapRequest || user?.role !== "admin") return;
+    message.textContent = "Could not load the campus map: " + error.message;
+    message.classList.remove("hide");
+  }
+}
+let reportMapResizeFrame = null;
+window.addEventListener("resize", () => {
+  if (!reportMap) return;
+  cancelAnimationFrame(reportMapResizeFrame);
+  reportMapResizeFrame = requestAnimationFrame(fitReportMapToSchool);
+});
 
 // ---------- view switching ----------
 let user = null;
@@ -297,6 +418,7 @@ function show(v){
   }
   if (location.hash !== "#" + v) history.replaceState(null, "", "#" + v);
   if (v === "admin") renderAdmin();
+  if (v === "admin" && user.role === "admin") loadReportMap();
 }
 $("lf").onsubmit = async e => {
   e.preventDefault();

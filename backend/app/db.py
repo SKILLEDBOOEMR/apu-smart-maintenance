@@ -329,6 +329,20 @@ def verify_user_role(uuid_str):
     return None
 
 # ---------------------------------------------------------------------------
+# map
+# ---------------------------------------------------------------------------
+def fetch_location_of_reports_not_done() -> list[dict]:
+    res = (
+        get_client()
+        .table(TABLE)
+        .select("id, status, latitude, longitude, priority, severity, issue_description")
+        .neq("status", "Completed")
+        .execute()
+    )
+
+    return res.data or []
+
+# ---------------------------------------------------------------------------
 # SMOKE TEST:  python -m app.supabase   (from backend\)
 # Inserts one test row, reads it back, then deletes it.
 # ---------------------------------------------------------------------------
