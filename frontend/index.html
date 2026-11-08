@@ -345,9 +345,9 @@ async function loadReportMap() {
     if (!reportMap) {
       reportMap = L.map("map", {maxBounds, maxBoundsViscosity: 1, zoomControl: true});
       reportMap.setView(schoolBounds.getCenter(), 16);
-      reportMapTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      reportMapTiles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19,
+        attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community'
       }).addTo(reportMap);
     } else {
       reportMap.setMaxBounds(maxBounds);
