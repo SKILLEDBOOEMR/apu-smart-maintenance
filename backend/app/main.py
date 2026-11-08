@@ -1,4 +1,5 @@
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from .gemini_client import analyze_report
 from .location import locate_user_one_building
 from app import db as db
@@ -9,6 +10,19 @@ import uuid
 app = FastAPI(title="Campus Maintenance API")
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+    "https://fixit-01gu.onrender.com/"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,          # or use ["*"] temporarily to allow ALL sites for testing
+    allow_credentials=True,
+    allow_methods=["*"],            # Allows all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],            # Allows all headers
+)
 
 class LoginRequest(BaseModel):
     email: str

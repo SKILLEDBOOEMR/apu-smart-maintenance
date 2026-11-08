@@ -247,7 +247,7 @@ dialog::backdrop{background:rgba(10,18,32,.58)}
 </main>
 
 <script>
-const API_BASE = (new URLSearchParams(location.search).get("api") || (location.protocol === "file:" ? "http://127.0.0.1:8000" : location.origin)).replace(/\/+$/, "");
+const API_BASE = "https://fixit-01gu.onrender.com";
 const $ = id => document.getElementById(id);
 const ago = m => m < 60 ? m + " min ago" : m < 1440 ? Math.round(m/60) + " h ago" : Math.round(m/1440) + " d ago";
 
