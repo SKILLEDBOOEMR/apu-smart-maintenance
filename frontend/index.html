@@ -777,8 +777,9 @@ function renderAdmin(){
   $(id).addEventListener("change", renderAdmin);
 });
 
+user = {name: "Guest", role: "guest", uuid: null};
 loadBuildings();
-show(location.hash.slice(1));
+show("student");
 </script>
 </body>
 </html>
