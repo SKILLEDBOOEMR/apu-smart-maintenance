@@ -9,6 +9,7 @@ def _poly(points):
     return MultiPoint([(lng, lat) for lat, lng in points]).convex_hull
 NEAR_BUFFER = 0.0001
 
+
 # ---------------------------------------------------------------------------
 # The feature
 # ---------------------------------------------------------------------------

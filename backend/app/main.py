@@ -14,11 +14,15 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class NotifyPayload(BaseModel):
+    uuid: str
+    work_order_id: str = None # Optional if already in the path
+
 class SignupRequest(BaseModel):
     email: str
     password: str
     full_name: str
-    role: str | None = "user"  # Default role is "user"
+    role: str | None = "student"  # Default role is "user"
 
 def _image_mime_type(data: bytes) -> str | None:
     if data.startswith(b"\xff\xd8\xff"):
@@ -39,35 +43,54 @@ def _building_sort_key(name: str):
         return (3, low, 0)                            # "The whole school" always last
     return (2, low, 0)     
 
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/buildings")
+@app.get("/buildings") #universal
 def buildings():
     names = [b["feature_name"] for b in db.list_building() if b.get("feature_name")]
     names = [n for n in names if n.strip().lower() != "the whole school"]
     return sorted(set(names), key=_building_sort_key)
 
-@app.get("/work-orders")
+@app.get("/work-orders") #staff
 def fetch_work_orders(
     feature_name: str | None = None,
     polygon_data: dict | None = None,
+    uuid: str | None = None,
     page: int = 1,
     limit: int = 20,
 ):
+    if db.verify_user_role(uuid) != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
+
     work_orders = db.list_work_orders()
     return work_orders
 
-@app.get("/work-orders/{work_order_id}")
-def view_work_order(work_order_id: str):
+@app.get("/work-orders/{work_order_id}") #staff
+def view_work_order(work_order_id: str, uuid: str | None = None):
+    if db.verify_user_role(uuid) != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
+
     work_order = db.view_individual_work_order(work_order_id)
     if not work_order:
         raise HTTPException(status_code=404, detail="Work order not found.")
     return work_order
 
-@app.get("/requests/mine")
+@app.post("/work-orders/{work_order_id}/notify")
+def notify_work_order(work_order_id: str, payload: NotifyPayload):
+    # Extract uuid from the validated payload object
+    user_uuid = payload.uuid
+    
+    print(f"notify_work_order called with work_order_id={work_order_id}, uuid={user_uuid}")
+    
+    if db.verify_user_role(user_uuid) != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    db.notify_maintenace_teams(work_order_id)
+    return {"success": True, "message": "Maintenance teams notified successfully."}
+
+@app.get("/requests/mine") #student
 def fetch_my_requests(
     student_id: uuid.UUID,
     page: int = 1,
@@ -80,7 +103,7 @@ def fetch_my_requests(
 async def login(credentials: LoginRequest):
     try:
         # Authenticate using Supabase Auth
-        auth_response = db.get_client().auth.sign_in_with_password({
+        auth_response = db.get_auth_client().auth.sign_in_with_password({
             "email": credentials.email,
             "password": credentials.password
         })
@@ -88,11 +111,13 @@ async def login(credentials: LoginRequest):
         if not auth_response.user:
             raise HTTPException(status_code=400, detail="Invalid email or password")
 
+        public_user_id = db.get_client().from_('users').select('id').eq('auth_user_id', auth_response.user.id).execute().data[0]['id']
+
         return {
             "success": True,
             "message": "Login successful",
             "email": credentials.email,
-            "user_id": auth_response.user.id
+            "user_id": public_user_id
         }
 
     except Exception as e:
@@ -102,7 +127,7 @@ async def login(credentials: LoginRequest):
 async def signup(credentials: SignupRequest):
     try:
         # Register user and pass full_name into Supabase user metadata
-        auth_response = db.get_client().auth.sign_up({
+        auth_response = db.get_auth_client().auth.sign_up({
             "email": credentials.email,
             "password": credentials.password,
             "options": {
@@ -131,6 +156,7 @@ async def analyze(
     image: UploadFile | None = File(default=None),
     building: str | None = Form(default=None),
     room: str | None = Form(default=None),
+    uuid: str | None = Form(default=None),
     latitude: float | None = Form(default=None),
     longitude: float | None = Form(default=None),
 ):
@@ -145,24 +171,32 @@ async def analyze(
     if longitude is not None and not -180 <= longitude <= 180:
         raise HTTPException(status_code=422, detail="Longitude must be between -180 and 180.")
 
-    #fetch the location status based on the provided coordinates and building
-    location_data = db.get_building(building) if building else None
-    if location_data is None and building:
-        location_data = db.get_building("The whole school") 
-        pass
-    elif location_data:
-        check_loc = locate_user_one_building(latitude, longitude, location_data.get("polygon_data"))
-    else:
-        raise HTTPException(
-            status_code=422, 
-            detail=f"Please provide a valid building."
+    if text.find("warrenwinarko") > 0: #only for testing purposes, remove this in production
+        # Fetch location data from DB
+        location_data = db.get_building(building) if building else None
+        print(location_data)
+
+        if building and location_data is None:
+            location_data = db.get_building("The whole school")
+
+        if location_data and latitude is not None and longitude is not None :
+            check_loc = locate_user_one_building(
+                latitude=latitude,
+                longitude=longitude,
+                polygon_data=location_data.get("polygon_data"),  # Must pass this!
+                name=location_data.get("feature_name", building),
+            )
+        else:
+            raise HTTPException(
+                status_code=422, detail="Please provide a valid building and coordinates."
             )
 
-    if check_loc["zone"] == "outside":
-        raise HTTPException(
-            status_code=422,
-            detail=f"You are not at {building}. Please be at the location.",
-        )
+        # Now check_loc["zone"] will safely be "building", "near_building", or "outside"
+        if check_loc["zone"] == "outside":
+            raise HTTPException(
+                status_code=422,
+                detail=f"You are not at {building}. Please be at the location.",
+            )
 
     image_bytes = None
     mime_type = None
@@ -193,6 +227,7 @@ async def analyze(
     dup = db.find_duplicate(building, analysis.category) if building else None
     if dup:
         db.add_duplicate_report(dup)
+        db.add_to_student_reports(uuid, dup["id"]) if uuid else None
         raise HTTPException(
             status_code=409,
             detail="A similar work order has already been reported.",
@@ -201,8 +236,9 @@ async def analyze(
     stored = db.upload_image(image_bytes, image.filename, mime_type)
     row = db.build_row(
         analysis=data,
+        ai_confidence=data.get("confidence"),
         title=data.get("title"), 
-        text=text,
+        text=data.get("problem_summary"),
         building=building,
         room=room,
         latitude=latitude,
@@ -210,6 +246,7 @@ async def analyze(
         image_url=stored["url"]
     )
     work_order = db.create_work_order(row)
+    db.add_to_student_reports(uuid, work_order["id"]) if uuid else None
 
 
     res = {

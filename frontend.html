@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>APU resolve</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef2f6;--card:#fff;--ink:#17233a;--mute:#5c6a82;--line:#d9e0ea;--pri:#2f5bea;--pri-ink:#fff;--bad:#d6343b;--badbg:#fde8e9;--warn:#a86f00;--warnbg:#fff1cf;--ok:#12805a;--okbg:#dcf4ea;--info:#2f5bea;--infobg:#e3eafd;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1624;--card:#18223a;--ink:#e8edf7;--mute:#9aa8c2;--line:#2a3654;--pri:#6d8cff;--pri-ink:#0f1624;--bad:#ff7b80;--badbg:#3b1c26;--warn:#f2bf4d;--warnbg:#3a2f12;--ok:#4cd49f;--okbg:#12352b;--info:#8ea6ff;--infobg:#1f2c55;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1624;--card:#18223a;--ink:#e8edf7;--mute:#9aa8c2;--line:#2a3654;--pri:#6d8cff;--pri-ink:#0f1624;--bad:#ff7b80;--badbg:#3b1c26;--warn:#f2bf4d;--warnbg:#3a2f12;--ok:#4cd49f;--okbg:#12352b;--info:#8ea6ff;--infobg:#1f2c55;color-scheme:dark}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Figtree,system-ui,sans-serif}
+h1,h2,h3{font-family:"Bricolage Grotesque",Figtree,system-ui,sans-serif;line-height:1.15;margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px clamp(16px,4vw,40px);background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font:700 22px "Bricolage Grotesque",sans-serif}
+.who{display:flex;align-items:center;gap:14px;font-weight:600}
+.logincard{max-width:440px;margin:6vh auto 0;}
+.logincard .btn:not(.ghost) { width: 100%; }
+.btn.ghost { 
+  background: none; 
+  color: var(--pri); 
+  padding: 12px 0; 
+  width: auto; 
+  display: inline-block; 
+}
+.logincard, #student {
+  width: 100%;
+  max-width: 440px;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 6vh; /* Keeps your desired top spacing */
+  box-sizing: border-box;
+}
+.btn.alt{background:var(--infobg);color:var(--pri)}
+.divider{display:flex;align-items:center;gap:12px;color:var(--mute);margin:8px 0}
+.divider::before,.divider::after{content:"";flex:1;border-top:1px solid var(--line)}
+.logincard .hint{margin:0 0 0 0}
+main{max-width:1100px;margin:0 auto;padding:clamp(20px,4vw,40px) clamp(16px,4vw,40px) 60px}
+.hide{display:none!important}
+.lead{color:var(--mute);margin:8px 0 0;max-width:52ch}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px}
+.form{display:grid;gap:0px;margin-top:24px;max-width:640px}
+label,.lbl{font-weight:600;display:block;margin-bottom:6px}
+.opt{font-weight:400;color:var(--mute)}
+input[type=text], input[type=email],input[type=password],select,textarea{width:100%;padding:11px 12px;margin:0 0 10px 0;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+textarea{min-height:90px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:560px){.row{grid-template-columns:1fr}}
+.drop{display:grid;place-items:center;text-align:center;gap:6px;padding:26px 16px;border:2px dashed var(--line);border-radius:14px;cursor:pointer;background:var(--bg);min-height:150px}
+.drop:hover,.drop.on{border-color:var(--pri)}
+.drop img{max-width:100%;max-height:220px;border-radius:10px}
+.hint{font-size:14px;color:var(--mute)}
+.err {
+  color: var(--bad);
+  font-size: 14px;
+  max-height: 0;
+  min-height: 15px;
+  opacity: 0;
+  overflow: hidden;
+  margin-top: 0;
+}
+
+/* When the error is active/visible */
+.err:not(.hide) {
+  max-height: 15px; /* Adjust as needed for error text length */
+  min-height: 15px;
+  opacity: 1;
+  margin-top: 0px;
+}
+
+/* Override the default global .hide just for errors to allow smooth transition */
+.err.hide {
+  display: block !important; /* Keep it in the layout flow so it can transition */
+  max-height: 0 !important;
+  opacity: 0 !important;
+  margin-top: 0 !important;
+}
+.btn{border:0;background:var(--pri);color:var(--pri-ink);padding:13px 22px;border-radius:10px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.ghost{background:none;color:var(--pri);padding:6px 0}
+.chk{display:flex;gap:10px;align-items:flex-start;font-weight:400}
+.chk input{margin-top:5px}
+.done{margin-top:24px;max-width:640px;border-left:5px solid var(--ok)}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
+.p-high{background:var(--badbg);color:var(--bad)}.p-med{background:var(--warnbg);color:var(--warn)}.p-low{background:var(--okbg);color:var(--ok)}
+.s-new{background:var(--infobg);color:var(--info)}.s-prog{background:var(--warnbg);color:var(--warn)}.s-done{background:var(--okbg);color:var(--ok)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:22px 0}
+.stat b{display:block;font:700 34px "Bricolage Grotesque",sans-serif}
+.stat span{color:var(--mute);font-size:14px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.bar input,.bar select{width:auto;flex:1 1 150px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+table{width:100%;border-collapse:collapse;min-width:720px}
+th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:14px;color:var(--mute);font-weight:600}
+tr:last-child td{border-bottom:0}
+td small{color:var(--mute);display:block}
+td select{padding:6px 8px;width:auto}
+.empty{padding:32px;text-align:center;color:var(--mute)}
+@media(prefers-reduced-motion:no-preference){.done{animation:pop .35s ease-out}@keyframes pop{from{transform:translateY(6px);opacity:0}}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">FixIt</div>
+  <div class="who hide" id="who"><span id="whoname"></span><button class="btn ghost" id="logout" type="button">Log out</button></div>
+</header>
+
+<main>
+<!-- LOGIN -->
+<section id="login">
+  <div class="card logincard">
+    <div id="loginpane">
+      <h1>Welcome to FixIt</h1>
+      <p class="lead">Log in to your account, or just tell us about a problem right away.</p>
+      <form id="lf" class="form" novalidate style="margin-top:15px">
+        <div><label for="user">Account email</label><input type="email" id="user" autocomplete="username" required></div>
+      <!-- Wrapper div keeps password, hint, and error locked together -->
+        <div style="display: grid; gap: 0;">
+          <div>
+            <label for="pass" style="margin: 0;">Password</label>
+            <input type="password" id="pass" autocomplete="current-password" required style="margin: 0;">
+          </div>
+          
+          <p class="hint" style="margin: 0;">New here? <button class="btn ghost" style="margin: 0;" id="showSignup" type="button">Create an account</button></p>
+          
+          <!-- Error message sits directly below with zero initial space -->
+          <div class="err hide" id="loginerr" role="alert" style="margin: 0 0 20px 0;"></div>
+        </div>
+        <button class="btn">Log in</button>
+      </form>
+      <div class="divider">or</div>
+      <button class="btn alt" id="guest" type="button">Report as a guest</button>
+      <p class="hint">No account needed. Guests can send a report without logging in.</p>
+    </div>
+    <div id="signuppane" class="hide">
+      <h2>Create your account</h2>
+      <p class="lead">Sign up with your name, email, and password.</p>
+      <form id="sf" class="form" novalidate style="margin-top:20px">
+        <div><label for="fullname">Full name</label><input type="text" id="fullname" autocomplete="name" required></div>
+        <div><label for="signupemail">Account email</label><input type="email" id="signupemail" autocomplete="email" required></div>
+        <div><label for="signuppass">Password</label><input type="password" id="signuppass" autocomplete="new-password" required></div>
+        <div class="err hide" id="signuperr" role="alert"></div>
+        <div class="hint hide" id="signupsuccess" role="status"></div>
+        <button class="btn">Create account</button>
+      </form>
+      <p class="hint">Already have an account? <button class="btn ghost" id="showLogin" type="button">Log in</button></p>
+    </div>
+  </div>
+</section>
+
+<!-- STUDENT -->
+<section id="student" class="hide">
+  <h1>Something broken? Show us.</h1>
+  <p class="lead">Snap a photo, tell us where it is, and the facilities team will take it from there.</p>
+  <form id="f" class="form" novalidate>
+    <div>
+      <span class="lbl">Photo of the problem</span>
+      <label class="drop" id="drop" for="img">
+        <div id="dropin"><strong>Tap to take or choose a photo</strong><div class="hint">JPG or PNG, up to 5 MB</div></div>
+      </label>
+      <input type="file" id="img" accept="image/jpeg,image/png" class="hide">
+      <div class="err hide" id="imgerr"></div>
+    </div>
+    <div class="row">
+      <div><label for="building">Building</label>
+        <select id="building"><option value="">Choose a building</option></select></div>
+      <div><label for="room">Room <span class="opt">(optional)</span></label>
+        <input type="text" id="room" placeholder="e.g. B-28"></div>
+    </div>
+    <div><label for="text">Anything else we should know? <span class="opt">(optional)</span></label>
+      <textarea id="text" placeholder="e.g. The tap has been dripping since Monday."></textarea></div>
+    <label class="chk"><input type="checkbox" id="loc"><span>Share my location so staff can find the spot faster (required)<br><span class="hint" id="lochint">The report API requires your location to confirm the selected building.</span></span></label>
+    <div><button class="btn" id="send" disabled>Send report</button>
+      <div class="hint" id="sendhint" style="margin-top:6px">Add a photo to send your report.</div>
+      <div class="err hide" id="senderr"></div></div>
+  </form>
+  <div class="card done hide" id="done" role="status" tabindex="-1">
+    <h2>Thanks, we’ve got it.</h2>
+    <p id="donetxt" style="margin:8px 0 14px"></p>
+    <button class="btn ghost" id="again" type="button">Report another problem</button>
+  </div>
+</section>
+
+<!-- ADMIN -->
+<section id="admin" class="hide">
+  <h1>Here’s what needs attention</h1>
+  <p class="lead">Reports from students, newest first. Statuses and counts are loaded from the server.</p>
+  <div class="err hide" id="adminerr" role="alert"></div>
+  <div class="stats" id="stats"></div>
+  <div class="bar">
+    <input type="text" id="q" placeholder="Search issues or rooms" aria-label="Search issues or rooms">
+    <select id="fb" aria-label="Filter by building"><option value="">All buildings</option></select>
+    <select id="fs" aria-label="Filter by status"><option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Resolved</option></select>
+  </div>
+  <div class="scroll"><table>
+    <thead><tr><th>Issue</th><th>Where</th><th>How urgent</th><th>Status</th><th>Reported</th></tr></thead>
+    <tbody id="rows"></tbody></table>
+    <div class="empty hide" id="none">Nothing matches those filters. Try clearing the search.</div></div>
+</section>
+</main>
+
+<script>
+const API_BASE = (new URLSearchParams(location.search).get("api") || (location.protocol === "file:" ? "http://127.0.0.1:8000" : location.origin)).replace(/\/+$/, "");
+const $ = id => document.getElementById(id);
+const ago = m => m < 60 ? m + " min ago" : m < 1440 ? Math.round(m/60) + " h ago" : Math.round(m/1440) + " d ago";
+
+let issues = [];
+
+async function apiRequest(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(API_BASE + path, options);
+  } catch {
+    throw new Error("Could not reach the API. Check the server address and that the backend is running.");
+  }
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("The API returned an invalid response.");
+  }
+  if (!response.ok) {
+    const error = new Error(data.detail || data.message || "The server had a problem (" + response.status + ").");
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+// ---------- view switching ----------
+let user = null;
+function show(v){
+  if (!user) v = "login";                                   // nobody gets past the door without logging in or choosing guest
+  else if (!["student","admin"].includes(v)) v = user.role === "admin" ? "admin" : "student";
+  else if (v === "admin" && user.role !== "admin") v = "student"; // only staff see the dashboard
+  ["login","student","admin"].forEach(n => $(n).classList.toggle("hide", n !== v));
+  $("who").classList.toggle("hide", !user);
+  if (user) {
+    $("whoname").textContent = user.role === "guest" ? "Reporting as a guest" : "Hi, " + user.name;
+    $("logout").textContent = user.role === "guest" ? "Log in" : "Log out";
+  }
+  if (location.hash !== "#" + v) history.replaceState(null, "", "#" + v);
+  if (v === "admin") renderAdmin();
+}
+$("lf").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("user").value.trim(), pw = $("pass").value, err = $("loginerr");
+  if (!name || !pw) { err.textContent = "Please fill in your email and password."; err.classList.remove("hide"); return; }
+  err.classList.add("hide");
+  const button = $("lf").querySelector("button");
+  button.disabled = true;
+  button.textContent = "Signing in…";
+  try {
+    const session = await apiRequest("/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({email: name, password: pw})
+    });
+    if (!session.user_id) throw new Error("The API did not return a user ID.");
+    let role = "student";
+    try {
+      await apiRequest("/work-orders?uuid=" + encodeURIComponent(session.user_id));
+      role = "admin";
+    } catch (x) {
+      if (x.status !== 403) throw x;
+    }
+    user = {name: session.email ? session.email.split("@")[0] : name.split("@")[0], role, uuid: session.user_id};
+    $("lf").reset();
+    show(role === "admin" ? "admin" : "student");
+    if (role === "admin") await loadWorkOrders();
+  } catch (x) {
+    err.textContent = x.message;
+    err.classList.remove("hide");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Log in";
+  }
+};
+$("showSignup").onclick = () => {
+  $("loginpane").classList.add("hide");
+  $("signuppane").classList.remove("hide");
+  $("signuperr").classList.add("hide");
+  $("signupsuccess").classList.add("hide");
+  $("fullname").focus();
+};
+$("showLogin").onclick = () => {
+  $("signuppane").classList.add("hide");
+  $("loginpane").classList.remove("hide");
+  $("loginerr").classList.add("hide");
+  $("user").focus();
+};
+$("sf").onsubmit = async e => {
+  e.preventDefault();
+  const fullName = $("fullname").value.trim();
+  const email = $("signupemail").value.trim();
+  const password = $("signuppass").value;
+  const err = $("signuperr"), success = $("signupsuccess");
+  err.classList.add("hide");
+  success.classList.add("hide");
+  if (!fullName || !email || !password) {
+    err.textContent = "Please fill in your name, email, and password.";
+    err.classList.remove("hide");
+    return;
+  }
+  const button = $("sf").querySelector("button");
+  button.disabled = true;
+  button.textContent = "Creating account…";
+  try {
+    const result = await apiRequest("/signup", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({full_name: fullName, email, password})
+    });
+    $("sf").reset();
+    $("user").value = email;
+    success.textContent = result.message || "Account created successfully. You can now log in.";
+    success.classList.remove("hide");
+  } catch (x) {
+    err.textContent = x.message;
+    err.classList.remove("hide");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Create account";
+  }
+};
+$("guest").onclick = () => { user = {name: "Guest", role: "guest", uuid: null}; show("student"); };
+$("logout").onclick = () => { user = null; $("again").click(); show("login"); };
+window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+
+// ---------- buildings dropdown ----------
+async function loadBuildings(){
+  const selects = [$("building"), $("fb")];
+  try {
+    const list = await apiRequest("/buildings");
+    if (!Array.isArray(list)) throw new Error("The API returned an invalid building list.");
+    for (const sel of selects) {
+      sel.replaceChildren(new Option(sel.id === "building" ? "Choose a building" : "All buildings", ""));
+      list.forEach(item => {
+        const name = typeof item === "string" ? item : item.name;
+        if (name) sel.add(new Option(name, name));
+      });
+    }
+    if (!list.length) $("building").add(new Option("No buildings available", ""));
+  } catch (x) {
+    $("building").replaceChildren(new Option("Could not load buildings", ""));
+    $("senderr").textContent = x.message;
+    $("senderr").classList.remove("hide");
+  }
+}
+
+// ---------- student form ----------
+let file = null;
+function updateSend(){
+  const canSend = !!file && !!$("building").value && !!coords;
+  $("send").disabled = !canSend;
+  $("sendhint").textContent = !file ? "Add a photo to send your report." : ! $("building").value ? "Choose a building to continue." : !coords ? "Share your location to send your report." : "";
+  $("sendhint").classList.toggle("hide", canSend);
+}
+$("building").addEventListener("change", updateSend);
+$("img").onchange = e => {
+  const f = e.target.files[0], err = $("imgerr");
+  err.classList.add("hide"); file = null;
+  if (!f) { updateSend(); return; }
+  if (!["image/jpeg","image/png"].includes(f.type)) err.textContent = "That file isn’t a JPG or PNG. Please choose a photo in one of those formats.";
+  else if (f.size > 5 * 1024 * 1024) err.textContent = "That photo is over 5 MB. Try a smaller one or take a new photo.";
+  else {
+    file = f;
+    const img = document.createElement("img"); img.alt = "Preview of your photo"; img.src = URL.createObjectURL(f);
+    const d = $("dropin"); d.replaceChildren(img);
+    const c = document.createElement("div"); c.className = "hint"; c.textContent = "Tap to change photo"; d.append(c);
+  }
+  err.classList.toggle("hide", !!file);
+  updateSend();
+};
+
+let coords = null;
+$("loc").onchange = e => {
+  coords = null;
+  if (!e.target.checked) { $("lochint").textContent = "The report API requires your location to confirm the selected building."; updateSend(); return; }
+  $("lochint").textContent = "Finding you…";
+  if (!navigator.geolocation) { e.target.checked = false; $("lochint").textContent = "Your browser can’t share location, which is required to send this report."; updateSend(); return; }
+  navigator.geolocation.getCurrentPosition(
+    p => { coords = {lat: p.coords.latitude, lng: p.coords.longitude}; $("lochint").textContent = "Got it. Location will be included."; updateSend(); },
+    () => { e.target.checked = false; $("lochint").textContent = "Location is blocked, which is required to send this report."; updateSend(); }
+  );
+  updateSend();
+};
+
+$("f").onsubmit = async e => {
+  e.preventDefault();
+  if (!file) return;
+  const fd = new FormData();                        // no Content-Type header: the browser sets the boundary
+  fd.append("image", file);
+  const text = $("text").value.trim(), building = $("building").value, room = $("room").value.trim();
+  if (!building || !coords) {
+    $("senderr").textContent = "Choose a building and share your location before sending.";
+    $("senderr").classList.remove("hide");
+    return;
+  }
+  if (text) fd.append("text", text);                // empty fields are left out, not sent as ""
+  fd.append("building", building);
+  if (room) fd.append("room", room);
+  fd.append("latitude", coords.lat);
+  fd.append("longitude", coords.lng);
+  if (user && user.uuid) fd.append("uuid", user.uuid);
+
+  const btn = $("send"), err = $("senderr");
+  err.classList.add("hide"); btn.disabled = true; btn.textContent = "Sending…";
+  try {
+    await apiRequest("/analyze", {method: "POST", body: fd});
+    $("donetxt").textContent = "Your report is with the facilities team" + (building ? " for " + building : "") + (room ? ", room " + room : "") + ". You don’t need to do anything else.";
+    $("f").classList.add("hide"); $("done").classList.remove("hide"); $("done").focus();
+  } catch (x) {
+    err.textContent = x.message;
+    err.classList.remove("hide");
+  }
+  btn.textContent = "Send report"; updateSend();
+};
+$("again").onclick = () => {
+  $("f").reset(); file = null; coords = null;
+  $("dropin").innerHTML = '<strong>Tap to take or choose a photo</strong><div class="hint">JPG or PNG, up to 5 MB</div>';
+  $("lochint").textContent = "The report API requires your location to confirm the selected building.";
+  $("senderr").classList.add("hide");
+  $("done").classList.add("hide"); $("f").classList.remove("hide"); updateSend();
+};
+
+// ---------- admin ----------
+const urgCls = {Critical:"p-high",High:"p-high",Medium:"p-med",Low:"p-low"};
+const stCls = {Open:"s-new","In Progress":"s-prog",Resolved:"s-done"};
+const normalizeStatus = status => {
+  const value = String(status || "Open").toLowerCase();
+  if (value === "resolved" || value === "closed") return "Resolved";
+  if (value === "in progress" || value === "in_progress") return "In Progress";
+  return "Open";
+};
+async function loadWorkOrders(){
+  const err = $("adminerr");
+  err.classList.add("hide");
+  try {
+    const data = await apiRequest("/work-orders?uuid=" + encodeURIComponent(user.uuid));
+    if (!data || !Array.isArray(data.work_orders)) throw new Error("The API returned an invalid work-order list.");
+    issues = data.work_orders.map(item => ({
+      title: item.title || item.issue_description || item.category || "Maintenance report",
+      building: item.building || "Not given",
+      room: item.room || "–",
+      urgency: item.priority || item.severity || "Medium",
+      status: normalizeStatus(item.status),
+      mins: item.created_at && Number.isFinite(new Date(item.created_at).getTime()) ? Math.max(0, Math.floor((Date.now() - new Date(item.created_at).getTime()) / 60000)) : 0
+    }));
+    renderAdmin();
+  } catch (x) {
+    issues = [];
+    renderAdmin();
+    err.textContent = x.message;
+    err.classList.remove("hide");
+    $("none").classList.add("hide");
+  }
+}
+function renderAdmin(){
+  const open = issues.filter(i => i.status !== "Resolved");
+  const stats = [
+    [open.length, "open issues"],
+    [open.filter(i => i.urgency === "High" || i.urgency === "Critical").length, "need attention today"],
+    [issues.filter(i => i.status === "In Progress").length, "being worked on"],
+    [issues.filter(i => i.status === "Resolved").length, "fixed"]
+  ];
+  $("stats").innerHTML = stats.map(s => '<div class="card stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>').join("");
+
+  const q = $("q").value.trim().toLowerCase(), fb = $("fb").value, fs = $("fs").value;
+  const rows = issues.filter(i => (!fb || i.building === fb) && (!fs || i.status === normalizeStatus(fs)) &&
+    (!q || (i.title + " " + i.room + " " + i.building).toLowerCase().includes(q)));
+  $("none").classList.toggle("hide", rows.length > 0 || !$("adminerr").classList.contains("hide"));
+  const tb = $("rows"); tb.replaceChildren();
+  rows.forEach(i => {
+    const tr = document.createElement("tr");
+    const cell = (html) => { const td = document.createElement("td"); td.innerHTML = html; return td; };
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    tr.append(cell("<strong>" + esc(i.title) + "</strong>"),
+      cell(esc(i.building) + "<small>" + esc(i.room) + "</small>"),
+      cell('<span class="pill ' + (urgCls[i.urgency] || "p-med") + '">' + esc(i.urgency) + "</span>"),
+      cell('<span class="pill ' + (stCls[i.status] || "s-new") + '">' + esc(i.status) + "</span>"),
+      cell(i.mins === 0 ? "Just now" : ago(i.mins)));
+    tb.append(tr);
+  });
+}
+["q","fb","fs"].forEach(id => {
+  $(id).addEventListener("input", renderAdmin);
+  $(id).addEventListener("change", renderAdmin);
+});
+
+loadBuildings();
+show(location.hash.slice(1));
+</script>
+</body>
+</html>

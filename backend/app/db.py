@@ -3,20 +3,20 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Optional
+from supabase import Client, create_client
 
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:          # python-dotenv is optional if you set env vars yourself
     pass
 
-from supabase import Client, create_client
-
+print("SUPABASE_URL from env:", os.getenv("SUPABASE_URL"))
 # ---------------------------------------------------------------------------
 # SETTINGS
 # ---------------------------------------------------------------------------
 TABLE = "work_orders"
-STUDENT_TABLE = "studen_reports"
+STUDENT_TABLE = "student_reports"
 BUILDING_TABLE = "map_coordinates"
 IMAGE_BUCKET = os.environ.get("SUPABASE_BUCKET", "maintenance-images")
 
@@ -52,12 +52,27 @@ TEAM_BY_CATEGORY = {
 # ---------------------------------------------------------------------------
 @lru_cache(maxsize=1)
 def get_client() -> Client:
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_KEY")
-    if not url or not key:
-        raise RuntimeError("Set SUPABASE_URL and SUPABASE_SERVICE_KEY in backend\\.env")
-    return create_client(url, key)
+  url = os.environ.get("SUPABASE_URL")
+  key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
+      "SUPABASE_SERVICE_ROLE_KEY"
+  )
 
+  print("--- FASTAPI SUPABASE INIT ---")
+  print("URL:", url)
+  print(
+      "Key loaded starts with:", key[:10] if key else "MISSING!"
+  )  # Verify this matches your working debug script!
+
+  if not url or not key:
+    raise RuntimeError("Supabase credentials missing in FastAPI environment.")
+  return create_client(url, key)
+
+def get_auth_client() -> Client:
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_ANON_KEY")
+    if not url or not key:
+        raise RuntimeError("Supabase URL or anon key is missing.")
+    return create_client(url, key)
 
 # ---------------------------------------------------------------------------
 # PRIORITY
@@ -106,6 +121,7 @@ def build_row(
     image_url: Optional[str] = None,
     image_path: Optional[str] = None,
     location_status: Optional[str] = None,
+    ai_confidence: Optional[float] = None,
 ) -> dict:
     # Capitalize category to match Supabase CHECK constraints (e.g. "plumbing" -> "Plumbing")
     raw_category = analysis.get("category", "")
@@ -133,6 +149,7 @@ def build_row(
         "image_url": image_url,
         "latitude": latitude,
         "longitude": longitude,
+        "ai_confidence": ai_confidence,
     }
     return row
 
@@ -140,9 +157,20 @@ def build_row(
 # Building ORDERS: read_all / read_one
 # ---------------------------------------------------------------------------
 
-def get_building(feature_name: str) -> Optional[dict]:
-    res = get_client().table(BUILDING_TABLE).select("*").eq("feature_name", feature_name).limit(1).execute()
-    return res.data[0] if res.data else None
+def get_building(building_name: str) -> dict | None:
+  """Fetches a specific building's polygon data by its feature name."""
+  if not building_name:
+    return None
+
+  res = (
+      get_client()
+      .table(BUILDING_TABLE)
+      .select("*")
+      .ilike("feature_name", building_name.strip())
+      .execute()
+  )
+
+  return res.data[0] if res.data else None
 
 def list_building(feature_name: Optional[str] = None) -> list:
     """Fetching all feature names from the building table."""
@@ -199,22 +227,70 @@ def list_work_orders_by_student_id(id: uuid.UUID,page: int = 1, limit: int = 20,
     '''Gets the work order made by the students'''
     query = get_client().table(STUDENT_TABLE).select("work_order_id").eq("student_id", id).execute()
     work_order_ids = [row["work_order_id"] for row in query.data]
-    work_orders_query = get_client().table(STUDENT_TABLE).select("title, category, status, building, room", count="exact").in_("id", work_order_ids)
+    work_orders_query = get_client().table(TABLE).select("title, category, status, building, room", count="exact").in_("id", work_order_ids)
     
     start = (page - 1) * limit
     res = work_orders_query.range(start, start + limit - 1).execute()
 
     return res.data[0] if res.data else None
 
+def add_to_student_reports(student_id: uuid.UUID, work_order_id: uuid.UUID) -> Optional[dict]:
+    """Adds a work order to the student's reports."""
+    client = get_client()
+    s_id = str(student_id)
+    wo_id = str(work_order_id)
+
+    row = {
+        "student_id": s_id,
+        "work_order_id": wo_id,
+    }
+
+    existing = client.table(STUDENT_TABLE).select("*").eq("student_id", s_id).eq("work_order_id", wo_id).execute()
+    if existing.data:
+        return None  # Already exists
+
+    res = client.table(STUDENT_TABLE).insert(row).execute()
+    return res.data[0] if res.data else None
+
+def notify_maintenace_teams(work_order_id: uuid.UUID) -> None:
+    """Notify the maintenance teams about a new work order."""
+    # Fetch the work order details
+    work_order = get_work_order(work_order_id)
+    if not work_order:
+        raise ValueError("Work order not found.")
+
+    work_order_category = get_client().table(TABLE).select("category").eq("id", work_order_id).execute()
+    fetch_maintenance_team_email = get_client().table("maintenance_teams").select("email, id").eq("category", work_order_category).execute() if work_order_category.data else None 
+    email = fetch_maintenance_team_email.data[0]['email'] if fetch_maintenance_team_email and fetch_maintenance_team_email.data else None
+
+    if fetch_maintenance_team_email and email:
+        # Here you would implement the logic to send an email to the maintenance team.
+        # This could involve using an email service or SMTP server.
+        # For demonstration purposes, we'll just print a message.
+        print(f"Email sent to {email} about work order {work_order_id}.")
+
+    #updating the email_status and email_sent_at fields in the work_orders table
+    update_work_order(work_order_id, {"email_status": "Sent", "email_sent_at": datetime.now(timezone.utc).isoformat(), "assigned_team_id": fetch_maintenance_team_email.data[0]['id'] if fetch_maintenance_team_email and fetch_maintenance_team_email.data else None})
+
+    # Here you would implement the logic to notify the maintenance teams.
+    # This could involve sending emails, push notifications, or any other form of communication.
+    # For demonstration purposes, we'll just print a message.
+    print(f"Admin notified maintenance teams about work order {work_order_id}.")
+
 # ---------------------------------------------------------------------------
 # DUPLICATES
 # ---------------------------------------------------------------------------
 def find_duplicate(building: str, category: str, days: int = 7) -> Optional[dict]:
-    """An unresolved work order in the same building and category from the last N days."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    
+    # Normalize inputs to prevent case/whitespace mismatches
+    clean_building = building.strip().title() if building else ""
+    clean_category = category.strip().title() if category else ""
+
     res = (
         get_client().table(TABLE).select("*")
-        .eq("building", building).eq("category", category)
+        .ilike("building", clean_building) # Case-insensitive match
+        .ilike("category", clean_category)
         .neq("status", "Resolved")
         .gte("created_at", cutoff)
         .order("created_at", desc=True).limit(1)
@@ -222,13 +298,26 @@ def find_duplicate(building: str, category: str, days: int = 7) -> Optional[dict
     )
     return res.data[0] if res.data else None
 
-
 def add_duplicate_report(work_order: dict) -> Optional[dict]:
     """Another person reported the same issue: bump the counter and re-check priority."""
     new_count = (work_order.get("report_count") or 1) + 1
     new_priority = compute_priority(work_order.get("severity"), work_order.get("category"), new_count)
     return update_work_order(work_order["id"], {"report_count": new_count, "priority": new_priority})
 
+# ---------------------------------------------------------------------------
+# user_related
+# ---------------------------------------------------------------------------
+
+def verify_user_role(uuid_str):
+    print(f"verify_user_role called with uuid={uuid_str}")
+    if not uuid_str or uuid_str == "null":
+        return None  # or raise an HTTPException / return an unauthorized role
+        
+    res = get_client().from_('users').select('role').eq('id', uuid_str).execute()
+    print(f"verify_user_role: uuid={uuid_str}, res={res.data}")
+    if res.data and len(res.data) > 0:
+        return res.data[0].get('role')
+    return None
 
 # ---------------------------------------------------------------------------
 # SMOKE TEST:  python -m app.supabase   (from backend\)
