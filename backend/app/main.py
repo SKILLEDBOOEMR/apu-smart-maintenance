@@ -15,7 +15,7 @@ origins = [
     "http://localhost",
     "http://localhost:8000",
     "https://fixit-01gu.onrender.com",
-    "https://radiant-zuccutto-79b106.netlify.app"]
+    "https://apufixit.netlify.app"]
 
 app.add_middleware(
     CORSMiddleware,
