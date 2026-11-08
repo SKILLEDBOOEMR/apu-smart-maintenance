@@ -116,8 +116,8 @@ def notify_work_order(work_order_id: str, payload: NotifyPayload):
     return {"success": True, "message": "Maintenance teams notified successfully."}
 
 @app.get("/map") #staff
-def map(uuid: str | None = None):
-    if db.verify_user_role(uuid) != "admin":
+def map(uuid: uuid.UUID | None = None):
+    if db.verify_user_role(str(uuid) if uuid else None) != "admin":
         raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
     center = [3.056007378655162, 101.69990037965738]
     school_polygon_data = db.get_building("The whole school")
