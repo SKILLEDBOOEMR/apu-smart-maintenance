@@ -477,9 +477,17 @@ $("f").onsubmit = async e => {
   const btn = $("send"), err = $("senderr");
   err.classList.add("hide"); btn.disabled = true; btn.textContent = "Sending…";
   try {
-    await apiRequest("/analyze", {method: "POST", body: fd});
+    let duplicate = false;
+    try {
+      await apiRequest("/analyze", {method: "POST", body: fd});
+    } catch (x) {
+      if (x.status !== 409) throw x;
+      duplicate = true;
+    }
     if (user && user.role === "student" && user.uuid) await loadStudentRequests();
-    $("donetxt").textContent = "Your report is with the facilities team" + (building ? " for " + building : "") + (room ? ", room " + room : "") + ". You don’t need to do anything else.";
+    $("donetxt").textContent = duplicate
+      ? "Thanks for reporting this. A similar issue has already been reported, and your report has been added to it."
+      : "Your report is with the facilities team" + (building ? " for " + building : "") + (room ? ", room " + room : "") + ". You don’t need to do anything else.";
     $("f").classList.add("hide"); $("done").classList.remove("hide"); $("done").focus();
   } catch (x) {
     err.textContent = x.message;
