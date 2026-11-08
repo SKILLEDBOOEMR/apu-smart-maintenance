@@ -47,6 +47,16 @@ def _building_sort_key(name: str):
 def health():
     return {"status": "ok"}
 
+@app.get("/work-orders/update_status/{work_order_id}") #staff
+def update_work_order_status(work_order_id: str, new_status: str, uuid: str | None = None):
+    if db.verify_user_role(uuid) != "admin":
+        raise HTTPException(status_code=403, detail="Access denied. Only staff can update work orders.")
+
+    updated_work_order = db.update_work_order_status(work_order_id, new_status)
+    if not updated_work_order:
+        raise HTTPException(status_code=404, detail="Work order not found.")
+    return updated_work_order
+
 @app.get("/buildings") #universal
 def buildings():
     names = [b["feature_name"] for b in db.list_building() if b.get("feature_name")]

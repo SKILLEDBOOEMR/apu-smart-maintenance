@@ -55,6 +55,8 @@ textarea{min-height:90px;resize:vertical}
 .drop:hover,.drop.on{border-color:var(--pri)}
 .drop img{max-width:100%;max-height:220px;border-radius:10px}
 .hint{font-size:14px;color:var(--mute)}
+.student-nav{display:flex;align-items:center;gap:8px;margin-right:auto}
+.student-nav .btn{width:auto}
 .err {
   color: var(--bad);
   font-size: 14px;
@@ -82,13 +84,17 @@ textarea{min-height:90px;resize:vertical}
 }
 .btn{border:0;background:var(--pri);color:var(--pri-ink);padding:13px 22px;border-radius:10px;font-weight:600;cursor:pointer}
 .btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.notify{padding:7px 10px;font-size:14px}
+.row-actions{display:grid;gap:8px;min-width:120px}
 .btn.ghost{background:none;color:var(--pri);padding:6px 0}
 .chk{display:flex;gap:10px;align-items:flex-start;font-weight:400}
 .chk input{margin-top:5px}
 .done{margin-top:24px;max-width:640px;border-left:5px solid var(--ok)}
 .pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
 .p-high{background:var(--badbg);color:var(--bad)}.p-med{background:var(--warnbg);color:var(--warn)}.p-low{background:var(--okbg);color:var(--ok)}
-.s-new{background:var(--infobg);color:var(--info)}.s-prog{background:var(--warnbg);color:var(--warn)}.s-done{background:var(--okbg);color:var(--ok)}
+.s-new{background:var(--infobg);color:var(--info)}.s-prog{background:var(--warnbg);color:var(--warn)}.s-done{background:var(--okbg);color:var(--ok)}.s-cancel{background:var(--badbg);color:var(--bad)}
+.status-trigger{border:0;background:none;padding:0;cursor:pointer}
+.status-trigger:disabled{cursor:wait;opacity:.65}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin:22px 0}
 .stat b{display:block;font:700 34px "Bricolage Grotesque",sans-serif}
 .stat span{color:var(--mute);font-size:14px}
@@ -102,12 +108,25 @@ tr:last-child td{border-bottom:0}
 td small{color:var(--mute);display:block}
 td select{padding:6px 8px;width:auto}
 .empty{padding:32px;text-align:center;color:var(--mute)}
+dialog{width:min(720px,calc(100% - 32px));max-height:85vh;overflow:auto;border:1px solid var(--line);border-radius:14px;padding:24px;background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(10,18,32,.58)}
+.detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.detail-image{display:block;max-width:100%;max-height:380px;margin:18px auto;border-radius:10px}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+.detail-grid div{padding:12px;border:1px solid var(--line);border-radius:10px}
+.detail-grid dt{color:var(--mute);font-size:14px}
+.detail-grid dd{margin:4px 0 0;overflow-wrap:anywhere}
+.detail-steps{padding-left:22px}
 @media(prefers-reduced-motion:no-preference){.done{animation:pop .35s ease-out}@keyframes pop{from{transform:translateY(6px);opacity:0}}}
 </style>
 </head>
 <body>
 <header>
   <div class="brand">FixIt</div>
+  <nav class="student-nav hide" id="studentNav" aria-label="Student navigation">
+    <button class="btn alt" id="myRequestsButton" type="button">My requests</button>
+    <button class="btn" id="reportIssueButton" type="button">Report an issue</button>
+  </nav>
   <div class="who hide" id="who"><span id="whoname"></span><button class="btn ghost" id="logout" type="button">Log out</button></div>
 </header>
 
@@ -156,8 +175,22 @@ td select{padding:6px 8px;width:auto}
 
 <!-- STUDENT -->
 <section id="student" class="hide">
+  <section id="studentRequestsPanel">
+    <h1>My maintenance requests</h1>
+    <p class="lead">Requests submitted from your account.</p>
+    <div class="err hide" id="studentRequestsErr" role="alert"></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Issue</th><th>Where</th><th>Category</th><th>Status</th></tr></thead>
+        <tbody id="studentRows"></tbody>
+      </table>
+      <div class="empty hide" id="studentNone">You haven’t submitted any requests yet. Use “Report an issue” to get started.</div>
+    </div>
+  </section>
+  <section id="studentReportPanel" class="hide">
   <h1>Something broken? Show us.</h1>
   <p class="lead">Snap a photo, tell us where it is, and the facilities team will take it from there.</p>
+  <p class="hint hide" id="guestTrackingHint">Guest reports are not linked to an account and will not appear in My requests.</p>
   <form id="f" class="form" novalidate>
     <div>
       <span class="lbl">Photo of the problem</span>
@@ -185,6 +218,7 @@ td select{padding:6px 8px;width:auto}
     <p id="donetxt" style="margin:8px 0 14px"></p>
     <button class="btn ghost" id="again" type="button">Report another problem</button>
   </div>
+  </section>
 </section>
 
 <!-- ADMIN -->
@@ -196,12 +230,19 @@ td select{padding:6px 8px;width:auto}
   <div class="bar">
     <input type="text" id="q" placeholder="Search issues or rooms" aria-label="Search issues or rooms">
     <select id="fb" aria-label="Filter by building"><option value="">All buildings</option></select>
-    <select id="fs" aria-label="Filter by status"><option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Resolved</option></select>
+    <select id="fs" aria-label="Filter by status"><option value="">All statuses</option><option>Open</option><option>In Progress</option><option>Completed</option><option>Cancelled</option></select>
   </div>
   <div class="scroll"><table>
-    <thead><tr><th>Issue</th><th>Where</th><th>How urgent</th><th>Status</th><th>Reported</th></tr></thead>
+    <thead><tr><th>Issue</th><th>Where</th><th>How urgent</th><th>Status</th><th>Reported</th><th>Maintenance team</th></tr></thead>
     <tbody id="rows"></tbody></table>
     <div class="empty hide" id="none">Nothing matches those filters. Try clearing the search.</div></div>
+  <dialog id="detailDialog" aria-labelledby="detailTitle">
+    <div class="detail-head">
+      <div><h2 id="detailTitle">Issue details</h2><p class="lead" id="detailSummary"></p></div>
+      <button class="btn ghost" id="closeDetails" type="button" aria-label="Close issue details">Close</button>
+    </div>
+    <div id="detailContent"></div>
+  </dialog>
 </section>
 </main>
 
@@ -241,6 +282,15 @@ function show(v){
   else if (v === "admin" && user.role !== "admin") v = "student"; // only staff see the dashboard
   ["login","student","admin"].forEach(n => $(n).classList.toggle("hide", n !== v));
   $("who").classList.toggle("hide", !user);
+  $("studentNav").classList.toggle("hide", !user || user.role !== "student");
+  if (v === "student") {
+    const isStudent = user.role === "student";
+    $("myRequestsButton").classList.toggle("hide", !isStudent);
+    $("studentRequestsPanel").classList.toggle("hide", !isStudent);
+    $("studentReportPanel").classList.toggle("hide", isStudent);
+    $("guestTrackingHint").classList.toggle("hide", isStudent);
+    if (isStudent) loadStudentRequests();
+  }
   if (user) {
     $("whoname").textContent = user.role === "guest" ? "Reporting as a guest" : "Hi, " + user.name;
     $("logout").textContent = user.role === "guest" ? "Log in" : "Log out";
@@ -332,6 +382,20 @@ $("sf").onsubmit = async e => {
 $("guest").onclick = () => { user = {name: "Guest", role: "guest", uuid: null}; show("student"); };
 $("logout").onclick = () => { user = null; $("again").click(); show("login"); };
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+$("myRequestsButton").onclick = () => {
+  $("studentRequestsPanel").classList.remove("hide");
+  $("studentReportPanel").classList.add("hide");
+  $("myRequestsButton").classList.remove("alt");
+  $("reportIssueButton").classList.add("alt");
+  loadStudentRequests();
+};
+
+$("reportIssueButton").onclick = () => {
+  $("studentRequestsPanel").classList.add("hide");
+  $("studentReportPanel").classList.remove("hide");
+  $("reportIssueButton").classList.remove("alt");
+  $("myRequestsButton").classList.add("alt");
+};
 
 // ---------- buildings dropdown ----------
 async function loadBuildings(){
@@ -408,12 +472,13 @@ $("f").onsubmit = async e => {
   if (room) fd.append("room", room);
   fd.append("latitude", coords.lat);
   fd.append("longitude", coords.lng);
-  if (user && user.uuid) fd.append("uuid", user.uuid);
+  if (user && user.role === "student" && user.uuid) fd.append("uuid", user.uuid);
 
   const btn = $("send"), err = $("senderr");
   err.classList.add("hide"); btn.disabled = true; btn.textContent = "Sending…";
   try {
     await apiRequest("/analyze", {method: "POST", body: fd});
+    if (user && user.role === "student" && user.uuid) await loadStudentRequests();
     $("donetxt").textContent = "Your report is with the facilities team" + (building ? " for " + building : "") + (room ? ", room " + room : "") + ". You don’t need to do anything else.";
     $("f").classList.add("hide"); $("done").classList.remove("hide"); $("done").focus();
   } catch (x) {
@@ -432,13 +497,50 @@ $("again").onclick = () => {
 
 // ---------- admin ----------
 const urgCls = {Critical:"p-high",High:"p-high",Medium:"p-med",Low:"p-low"};
-const stCls = {Open:"s-new","In Progress":"s-prog",Resolved:"s-done"};
+const stCls = {Open:"s-new","In Progress":"s-prog",Completed:"s-done",Cancelled:"s-cancel"};
 const normalizeStatus = status => {
   const value = String(status || "Open").toLowerCase();
-  if (value === "resolved" || value === "closed") return "Resolved";
+  if (value === "completed" || value === "resolved" || value === "closed") return "Completed";
   if (value === "in progress" || value === "in_progress") return "In Progress";
+  if (value === "cancelled" || value === "canceled") return "Cancelled";
   return "Open";
 };
+async function loadStudentRequests(){
+  const error = $("studentRequestsErr");
+  const tbody = $("studentRows");
+  error.classList.add("hide");
+  tbody.replaceChildren();
+  try {
+    const data = await apiRequest("/requests/mine?student_id=" + encodeURIComponent(user.uuid));
+    const requests = Array.isArray(data) ? data
+      : Array.isArray(data?.work_orders) ? data.work_orders
+      : data && typeof data === "object" ? [data] : [];
+    requests.forEach(request => {
+      const row = document.createElement("tr");
+      const issue = document.createElement("td");
+      issue.textContent = request.title || request.issue_description || request.category || "Maintenance request";
+      const location = document.createElement("td");
+      const building = request.building || "Not given";
+      const room = request.room || "–";
+      location.textContent = building + (room !== "–" ? " · " + room : "");
+      const category = document.createElement("td");
+      category.textContent = request.category || "Not provided";
+      const status = document.createElement("td");
+      const pill = document.createElement("span");
+      const normalizedStatus = normalizeStatus(request.status);
+      pill.className = "pill " + (stCls[normalizedStatus] || "s-new");
+      pill.textContent = normalizedStatus;
+      status.append(pill);
+      row.append(issue, location, category, status);
+      tbody.append(row);
+    });
+    $("studentNone").classList.toggle("hide", requests.length > 0);
+  } catch (x) {
+    $("studentNone").classList.add("hide");
+    error.textContent = x.message;
+    error.classList.remove("hide");
+  }
+}
 async function loadWorkOrders(){
   const err = $("adminerr");
   err.classList.add("hide");
@@ -446,11 +548,15 @@ async function loadWorkOrders(){
     const data = await apiRequest("/work-orders?uuid=" + encodeURIComponent(user.uuid));
     if (!data || !Array.isArray(data.work_orders)) throw new Error("The API returned an invalid work-order list.");
     issues = data.work_orders.map(item => ({
+      id: item.id,
       title: item.title || item.issue_description || item.category || "Maintenance report",
       building: item.building || "Not given",
       room: item.room || "–",
+      category: item.category,
       urgency: item.priority || item.severity || "Medium",
       status: normalizeStatus(item.status),
+      createdAt: item.created_at,
+      reportCount: item.report_count,
       mins: item.created_at && Number.isFinite(new Date(item.created_at).getTime()) ? Math.max(0, Math.floor((Date.now() - new Date(item.created_at).getTime()) / 60000)) : 0
     }));
     renderAdmin();
@@ -462,13 +568,100 @@ async function loadWorkOrders(){
     $("none").classList.add("hide");
   }
 }
+let activeDetailRequest = 0;
+async function showWorkOrderDetails(issue){
+  const dialog = $("detailDialog");
+  const content = $("detailContent");
+  const requestId = ++activeDetailRequest;
+  $("detailTitle").textContent = issue.title;
+  $("detailSummary").textContent = "Loading full issue details…";
+  content.replaceChildren();
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+  try {
+    const detail = await apiRequest("/work-orders/" + encodeURIComponent(issue.id) + "?uuid=" + encodeURIComponent(user.uuid));
+    if (requestId !== activeDetailRequest || !dialog.open) return;
+    const fields = [
+      ["Building", issue.building],
+      ["Room", issue.room],
+      ["Priority", issue.urgency],
+      ["Status", issue.status],
+      ["Category", issue.category || detail.category || "Not provided"],
+      ["Reported", issue.createdAt || detail.updated_at || "Not provided"],
+      ["Report count", issue.reportCount ?? "Not provided"],
+      ["Coordinates", detail.latitude != null && detail.longitude != null ? detail.latitude + ", " + detail.longitude : "Not provided"]
+    ];
+    const grid = document.createElement("dl");
+    grid.className = "detail-grid";
+    for (const [label, value] of fields) {
+      const item = document.createElement("div");
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const description = document.createElement("dd");
+      description.textContent = value == null || value === "" ? "Not provided" : String(value);
+      item.append(term, description);
+      grid.append(item);
+    }
+    content.append(grid);
+    $("detailSummary").textContent = detail.issue_description || issue.title;
+    if (detail.image_url) {
+      const image = document.createElement("img");
+      image.className = "detail-image";
+      image.src = detail.image_url;
+      image.alt = "Photo attached to this maintenance report";
+      image.onerror = () => {
+        image.remove();
+        const imageError = document.createElement("p");
+        imageError.className = "err";
+        imageError.textContent = "The report image could not be loaded.";
+        content.prepend(imageError);
+      };
+      content.prepend(image);
+    } else {
+      const noImage = document.createElement("p");
+      noImage.className = "hint";
+      noImage.textContent = "No image is attached to this report.";
+      content.prepend(noImage);
+    }
+    const steps = Array.isArray(detail.repair_steps)
+      ? detail.repair_steps
+      : typeof detail.repair_steps === "string" ? detail.repair_steps.split(/\r?\n/).filter(Boolean) : [];
+    if (steps.length) {
+      const heading = document.createElement("h3");
+      heading.textContent = "Suggested repair steps";
+      const list = document.createElement("ol");
+      list.className = "detail-steps";
+      steps.forEach(step => {
+        const item = document.createElement("li");
+        item.textContent = String(step);
+        list.append(item);
+      });
+      content.append(heading, list);
+    }
+  } catch (x) {
+    if (requestId !== activeDetailRequest || !dialog.open) return;
+    $("detailSummary").textContent = "Could not load issue details.";
+    const error = document.createElement("p");
+    error.className = "err";
+    error.setAttribute("role", "alert");
+    error.textContent = x.message;
+    content.replaceChildren(error);
+  }
+}
+$("closeDetails").onclick = () => {
+  activeDetailRequest++;
+  $("detailDialog").close();
+};
+$("detailDialog").addEventListener("click", e => {
+  if (e.target === $("detailDialog")) $("detailDialog").close();
+});
 function renderAdmin(){
-  const open = issues.filter(i => i.status !== "Resolved");
+  const open = issues.filter(i => !["Completed","Cancelled"].includes(i.status));
   const stats = [
     [open.length, "open issues"],
     [open.filter(i => i.urgency === "High" || i.urgency === "Critical").length, "need attention today"],
     [issues.filter(i => i.status === "In Progress").length, "being worked on"],
-    [issues.filter(i => i.status === "Resolved").length, "fixed"]
+    [issues.filter(i => i.status === "Completed").length, "completed"]
   ];
   $("stats").innerHTML = stats.map(s => '<div class="card stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>').join("");
 
@@ -483,9 +676,91 @@ function renderAdmin(){
     const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
     tr.append(cell("<strong>" + esc(i.title) + "</strong>"),
       cell(esc(i.building) + "<small>" + esc(i.room) + "</small>"),
-      cell('<span class="pill ' + (urgCls[i.urgency] || "p-med") + '">' + esc(i.urgency) + "</span>"),
-      cell('<span class="pill ' + (stCls[i.status] || "s-new") + '">' + esc(i.status) + "</span>"),
-      cell(i.mins === 0 ? "Just now" : ago(i.mins)));
+      cell('<span class="pill ' + (urgCls[i.urgency] || "p-med") + '">' + esc(i.urgency) + "</span>"));
+    const statusCell = document.createElement("td");
+    const statusButton = document.createElement("button");
+    statusButton.type = "button";
+    statusButton.className = "status-trigger";
+    statusButton.setAttribute("aria-label", "Change status for " + i.title + ". Current status: " + i.status);
+    const statusPill = document.createElement("span");
+    statusPill.className = "pill " + (stCls[i.status] || "s-new");
+    statusPill.textContent = i.status;
+    statusButton.append(statusPill);
+    const statusSelect = document.createElement("select");
+    statusSelect.classList.add("hide");
+    statusSelect.setAttribute("aria-label", "Select new status for " + i.title);
+    ["Open","In Progress","Completed","Cancelled"]
+      .forEach(status => statusSelect.add(new Option(status,status,status === i.status,status === i.status)));
+    const statusFeedback = document.createElement("small");
+    statusFeedback.setAttribute("role","status");
+    statusButton.disabled = !i.id;
+    statusSelect.disabled = !i.id;
+    statusButton.onclick = () => {
+      statusButton.classList.add("hide");
+      statusSelect.classList.remove("hide");
+      statusSelect.focus();
+    };
+    statusSelect.onchange = async () => {
+      const newStatus = statusSelect.value;
+      statusSelect.disabled = true;
+      statusFeedback.textContent = "Saving…";
+      try {
+        await apiRequest("/work-orders/update_status/" + encodeURIComponent(i.id) + "?new_status=" + encodeURIComponent(newStatus) + "&uuid=" + encodeURIComponent(user.uuid));
+        i.status = normalizeStatus(newStatus);
+        renderAdmin();
+      } catch (x) {
+        statusSelect.classList.add("hide");
+        statusButton.classList.remove("hide");
+        statusSelect.value = i.status;
+        statusSelect.disabled = false;
+        statusFeedback.textContent = x.message;
+      }
+    };
+    statusSelect.onblur = () => {
+      if (!statusSelect.disabled) {
+        statusSelect.classList.add("hide");
+        statusButton.classList.remove("hide");
+      }
+    };
+    statusCell.append(statusButton,statusSelect,statusFeedback);
+    tr.append(statusCell,cell(i.mins === 0 ? "Just now" : ago(i.mins)));
+    const action = document.createElement("td");
+    action.className = "row-actions";
+    const details = document.createElement("button");
+    details.type = "button";
+    details.className = "btn alt";
+    details.textContent = "View details";
+    details.disabled = !i.id;
+    details.setAttribute("aria-label", "View full details for " + i.title);
+    details.onclick = () => showWorkOrderDetails(i);
+    const notify = document.createElement("button");
+    notify.type = "button";
+    notify.className = "btn notify";
+    notify.textContent = "Contact team";
+    notify.disabled = !i.id;
+    notify.setAttribute("aria-label", "Contact maintenance team for " + i.title);
+    const feedback = document.createElement("small");
+    feedback.setAttribute("role", "status");
+    notify.onclick = async () => {
+      notify.disabled = true;
+      notify.textContent = "Contacting…";
+      feedback.textContent = "";
+      try {
+        const result = await apiRequest("/work-orders/" + encodeURIComponent(i.id) + "/notify", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({uuid: user.uuid})
+        });
+        notify.textContent = "Team contacted";
+        feedback.textContent = result.message || "Maintenance team notified.";
+      } catch (x) {
+        notify.disabled = false;
+        notify.textContent = "Retry contact";
+        feedback.textContent = x.message;
+      }
+    };
+    action.append(details, notify, feedback);
+    tr.append(action);
     tb.append(tr);
   });
 }

@@ -223,7 +223,7 @@ def view_individual_work_order(work_order_id) -> Optional[dict]:
     res = get_client().table(TABLE).select("issue_description, image_url, repair_steps, latitude, longitude, updated_at:created_at").eq("id", work_order_id).limit(1).execute()
     return res.data[0] if res.data else None
 
-def list_work_orders_by_student_id(id: uuid.UUID,page: int = 1, limit: int = 20,) -> Optional[dict]:
+def list_work_orders_by_student_id(id: uuid.UUID,page: int = 1, limit: int = 20,) -> list[dict]:
     '''Gets the work order made by the students'''
     query = get_client().table(STUDENT_TABLE).select("work_order_id").eq("student_id", id).execute()
     work_order_ids = [row["work_order_id"] for row in query.data]
@@ -232,7 +232,7 @@ def list_work_orders_by_student_id(id: uuid.UUID,page: int = 1, limit: int = 20,
     start = (page - 1) * limit
     res = work_orders_query.range(start, start + limit - 1).execute()
 
-    return res.data[0] if res.data else None
+    return res.data
 
 def add_to_student_reports(student_id: uuid.UUID, work_order_id: uuid.UUID) -> Optional[dict]:
     """Adds a work order to the student's reports."""
@@ -276,6 +276,15 @@ def notify_maintenace_teams(work_order_id: uuid.UUID) -> None:
     # This could involve sending emails, push notifications, or any other form of communication.
     # For demonstration purposes, we'll just print a message.
     print(f"Admin notified maintenance teams about work order {work_order_id}.")
+
+def update_work_order_status(work_order_id: str, new_status: str) -> Optional[dict]:
+    """Update the status of a work order."""
+    valid_statuses = ["Open", "In Progress", "Completed", "Cancelled"]
+    if new_status not in valid_statuses:
+        raise ValueError(f"Invalid status: {new_status}. Must be one of {valid_statuses}.")
+
+    updated_work_order = update_work_order(work_order_id, {"status": new_status})
+    return updated_work_order
 
 # ---------------------------------------------------------------------------
 # DUPLICATES
