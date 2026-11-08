@@ -316,7 +316,9 @@ function reportBoundsWithMargin(bounds, marginMeters) {
 }
 
 function resizeReportMap() {
-  if (reportMap) reportMap.invalidateSize({pan: false});
+  if (!reportMap) return;
+  reportMap.invalidateSize({pan: false});
+  reportMap.setMinZoom(reportMap.getBoundsZoom(reportMap.options.maxBounds, true));
 }
 
 async function loadReportMap() {
@@ -336,10 +338,13 @@ async function loadReportMap() {
     const schoolBounds = boundary.getBounds();
     if (!schoolBounds.isValid()) throw new Error("The school boundary is invalid.");
     reportMapSchoolBounds = schoolBounds;
-    const maxBounds = reportBoundsWithMargin(schoolBounds, 100);
-    const initializeMap = !reportMap;
+    const maxBounds = reportBoundsWithMargin(schoolBounds, 200);
     if (!reportMap) {
       reportMap = L.map("map", {maxBounds, maxBoundsViscosity: 1, zoomControl: true});
+      const minZoom = reportMap.getBoundsZoom(maxBounds, true);
+      const initialZoom = Math.max(reportMap.getBoundsZoom(schoolBounds, false, L.point(24, 24)), minZoom);
+      reportMap.setView(schoolBounds.getCenter(), initialZoom);
+      reportMap.setMinZoom(minZoom);
       reportMapTiles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         maxZoom: 19,
         attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community'
@@ -373,13 +378,7 @@ async function loadReportMap() {
       marker.bindPopup(popup).addTo(reportMap);
       markerCount++;
     }
-
-    if (initializeMap) {
-      reportMap.fitBounds(schoolBounds, {padding: [24, 24]});
-      reportMap.setMinZoom(reportMap.getZoom());
-    } else {
-      resizeReportMap();
-    }
+    resizeReportMap();
     message.textContent = markerCount ? "" : "No unfinished reports with valid locations.";
     message.classList.toggle("hide", markerCount > 0);
   } catch (error) {
