@@ -315,6 +315,12 @@ function reportBoundsWithMargin(bounds, marginMeters) {
   );
 }
 
+function reportBoundsWithCenterMargin(bounds, center, marginMeters) {
+  const centerPoint = L.latLng(center[0], center[1]);
+  const centerBounds = reportBoundsWithMargin(L.latLngBounds(centerPoint, centerPoint), marginMeters);
+  return L.latLngBounds(bounds.getSouthWest(), bounds.getNorthEast()).extend(centerBounds);
+}
+
 function fitReportMapToSchool() {
   if (!reportMap || !reportMapSchoolBounds) return;
   reportMap.invalidateSize({pan: false});
@@ -339,9 +345,15 @@ async function loadReportMap() {
     });
     const schoolBounds = boundary.getBounds();
     if (!schoolBounds.isValid()) throw new Error("The school boundary is invalid.");
+    const center = Array.isArray(data.center) && data.center.length === 2
+      ? data.center.map(Number)
+      : [schoolBounds.getCenter().lat, schoolBounds.getCenter().lng];
+    if (!center.every(Number.isFinite) || Math.abs(center[0]) > 90 || Math.abs(center[1]) > 180) {
+      throw new Error("The API returned an invalid map center.");
+    }
 
     reportMapSchoolBounds = schoolBounds;
-    const maxBounds = reportBoundsWithMargin(schoolBounds, 20);
+    const maxBounds = reportBoundsWithCenterMargin(schoolBounds, center, 100);
     if (!reportMap) {
       reportMap = L.map("map", {maxBounds, maxBoundsViscosity: 1, zoomControl: true});
       reportMap.setView(schoolBounds.getCenter(), 16);
