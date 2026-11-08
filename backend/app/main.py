@@ -14,7 +14,8 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 origins = [
     "http://localhost",
     "http://localhost:8000",
-    "https://fixit-01gu.onrender.com/"]
+    "https://fixit-01gu.onrender.com",
+    "https://radiant-zuccutto-79b106.netlify.app"]
 
 app.add_middleware(
     CORSMiddleware,
