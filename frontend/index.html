@@ -315,18 +315,8 @@ function reportBoundsWithMargin(bounds, marginMeters) {
   );
 }
 
-function reportBoundsWithCenterMargin(bounds, center, marginMeters) {
-  const centerPoint = L.latLng(center[0], center[1]);
-  const centerBounds = reportBoundsWithMargin(L.latLngBounds(centerPoint, centerPoint), marginMeters);
-  return L.latLngBounds(bounds.getSouthWest(), bounds.getNorthEast()).extend(centerBounds);
-}
-
-function fitReportMapToSchool() {
-  if (!reportMap || !reportMapSchoolBounds) return;
-  reportMap.invalidateSize({pan: false});
-  reportMap.setMinZoom(0);
-  reportMap.fitBounds(reportMapSchoolBounds, {padding: [24, 24]});
-  reportMap.setMinZoom(reportMap.getZoom());
+function resizeReportMap() {
+  if (reportMap) reportMap.invalidateSize({pan: false});
 }
 
 async function loadReportMap() {
@@ -345,18 +335,11 @@ async function loadReportMap() {
     });
     const schoolBounds = boundary.getBounds();
     if (!schoolBounds.isValid()) throw new Error("The school boundary is invalid.");
-    const center = Array.isArray(data.center) && data.center.length === 2
-      ? data.center.map(Number)
-      : [schoolBounds.getCenter().lat, schoolBounds.getCenter().lng];
-    if (!center.every(Number.isFinite) || Math.abs(center[0]) > 90 || Math.abs(center[1]) > 180) {
-      throw new Error("The API returned an invalid map center.");
-    }
-
     reportMapSchoolBounds = schoolBounds;
-    const maxBounds = reportBoundsWithCenterMargin(schoolBounds, center, 100);
+    const maxBounds = reportBoundsWithMargin(schoolBounds, 100);
+    const initializeMap = !reportMap;
     if (!reportMap) {
       reportMap = L.map("map", {maxBounds, maxBoundsViscosity: 1, zoomControl: true});
-      reportMap.setView(schoolBounds.getCenter(), 16);
       reportMapTiles = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         maxZoom: 19,
         attribution: 'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community'
@@ -391,7 +374,12 @@ async function loadReportMap() {
       markerCount++;
     }
 
-    fitReportMapToSchool();
+    if (initializeMap) {
+      reportMap.fitBounds(schoolBounds, {padding: [24, 24]});
+      reportMap.setMinZoom(reportMap.getZoom());
+    } else {
+      resizeReportMap();
+    }
     message.textContent = markerCount ? "" : "No unfinished reports with valid locations.";
     message.classList.toggle("hide", markerCount > 0);
   } catch (error) {
@@ -404,7 +392,7 @@ let reportMapResizeFrame = null;
 window.addEventListener("resize", () => {
   if (!reportMap) return;
   cancelAnimationFrame(reportMapResizeFrame);
-  reportMapResizeFrame = requestAnimationFrame(fitReportMapToSchool);
+  reportMapResizeFrame = requestAnimationFrame(resizeReportMap);
 });
 
 // ---------- view switching ----------
