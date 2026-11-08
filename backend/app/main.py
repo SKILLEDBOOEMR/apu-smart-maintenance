@@ -1,5 +1,7 @@
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
+import logging
 from .gemini_client import analyze_report
 from .location import locate_user_one_building
 from app import db as db
@@ -8,6 +10,7 @@ from pydantic import BaseModel
 import uuid
 
 app = FastAPI(title="Campus Maintenance API")
+logger = logging.getLogger(__name__)
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -117,13 +120,20 @@ def notify_work_order(work_order_id: str, payload: NotifyPayload):
 
 @app.get("/map") #staff
 def map(uuid: uuid.UUID | None = None):
-    if db.verify_user_role(str(uuid) if uuid else None) != "admin":
-        raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
-    center = [3.056007378655162, 101.69990037965738]
-    school_polygon_data = db.get_building("The whole school")
-    if not school_polygon_data or not school_polygon_data.get("polygon_data"):
-        raise HTTPException(status_code=404, detail="School boundary data is not available.")
-    unfinished_orders_locations = db.fetch_location_of_reports_not_done()
+    try:
+        if db.verify_user_role(str(uuid) if uuid else None) != "admin":
+            raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
+        center = [3.056007378655162, 101.69990037965738]
+        school_polygon_data = db.get_building("The whole school")
+        if not school_polygon_data or not school_polygon_data.get("polygon_data"):
+            raise HTTPException(status_code=404, detail="School boundary data is not available.")
+        unfinished_orders_locations = db.fetch_location_of_reports_not_done()
+    except httpx.TransportError as error:
+        logger.exception("Could not load map data from Supabase")
+        raise HTTPException(
+            status_code=503,
+            detail="Map data is temporarily unavailable. Please try again.",
+        ) from error
 
     return {
         "center" : center,
