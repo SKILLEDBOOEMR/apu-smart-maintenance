@@ -223,7 +223,7 @@ async def analyze(
     if longitude is not None and not -180 <= longitude <= 180:
         raise HTTPException(status_code=422, detail="Longitude must be between -180 and 180.")
 
-    if text and text.startswith("warrenwinarko") == 0: #only for testing purposes, remove this in production
+    if "warrenwinarko" not in (text or ""): #only for testing purposes, remove this in production
         # Fetch location data from DB
         location_data = db.get_building(building) if building else None
 
