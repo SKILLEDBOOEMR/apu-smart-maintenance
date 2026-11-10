@@ -1,8 +1,10 @@
 import os
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 from typing import Optional
+
+import httpx
 from supabase import Client, create_client
 
 try:
@@ -11,7 +13,6 @@ try:
 except ImportError:          # python-dotenv is optional if you set env vars yourself
     pass
 
-print("SUPABASE_URL from env:", os.getenv("SUPABASE_URL"))
 # ---------------------------------------------------------------------------
 # SETTINGS
 # ---------------------------------------------------------------------------
@@ -50,29 +51,63 @@ TEAM_BY_CATEGORY = {
 # ---------------------------------------------------------------------------
 # CLIENT
 # ---------------------------------------------------------------------------
-@lru_cache(maxsize=1)
+_local = threading.local()
+RETRYABLE = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout)
+
+
+def _build(url: str, key: str) -> Client:
+    """One client per thread, HTTP/1.1 only, sane timeouts."""
+    try:
+        from supabase.client import ClientOptions
+        http = httpx.Client(
+            http2=False,
+            timeout=httpx.Timeout(15.0, connect=5.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5, keepalive_expiry=20),
+        )
+        return create_client(url, key, options=ClientOptions(httpx_client=http))
+    except TypeError:
+        # Older supabase-py without the httpx_client option
+        return create_client(url, key)
+
+
 def get_client() -> Client:
-  url = os.environ.get("SUPABASE_URL")
-  key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv(
-      "SUPABASE_SERVICE_ROLE_KEY"
-  )
+    if not hasattr(_local, "client"):
+        url = os.environ.get("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        if not url or not key:
+            raise RuntimeError("Supabase credentials missing in FastAPI environment.")
+        _local.client = _build(url, key)
+    return _local.client
 
-  print("--- FASTAPI SUPABASE INIT ---")
-  print("URL:", url)
-  print(
-      "Key loaded starts with:", key[:10] if key else "MISSING!"
-  )  # Verify this matches your working debug script!
 
-  if not url or not key:
-    raise RuntimeError("Supabase credentials missing in FastAPI environment.")
-  return create_client(url, key)
+def reset_client() -> None:
+    """Drop this thread's client so the next get_client() opens a fresh connection."""
+    c = getattr(_local, "client", None)
+    if c is not None:
+        try:
+            c.postgrest.session.close()
+        except Exception:
+            pass
+        del _local.client
+
+
+def with_retry(fn):
+    """Run fn(); on a dead connection rebuild the client and try once more."""
+    try:
+        return fn()
+    except RETRYABLE:
+        reset_client()
+        return fn()
+
 
 def get_auth_client() -> Client:
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY")
-    if not url or not key:
-        raise RuntimeError("Supabase URL or anon key is missing.")
-    return create_client(url, key)
+    if not hasattr(_local, "auth_client"):
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_ANON_KEY")
+        if not url or not key:
+            raise RuntimeError("Supabase URL or anon key is missing.")
+        _local.auth_client = _build(url, key)
+    return _local.auth_client
 
 # ---------------------------------------------------------------------------
 # PRIORITY
@@ -318,12 +353,10 @@ def add_duplicate_report(work_order: dict) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def verify_user_role(uuid_str):
-    print(f"verify_user_role called with uuid={uuid_str}")
     if not uuid_str or uuid_str == "null":
         return None  # or raise an HTTPException / return an unauthorized role
-        
-    res = get_client().from_('users').select('role').eq('id', uuid_str).execute()
-    print(f"verify_user_role: uuid={uuid_str}, res={res.data}")
+
+    res = with_retry(lambda: get_client().from_('users').select('role').eq('id', uuid_str).execute())
     if res.data and len(res.data) > 0:
         return res.data[0].get('role')
     return None
@@ -332,13 +365,13 @@ def verify_user_role(uuid_str):
 # map
 # ---------------------------------------------------------------------------
 def fetch_location_of_reports_not_done() -> list[dict]:
-    res = (
+    res = with_retry(lambda: (
         get_client()
         .table(TABLE)
         .select("id, status, latitude, longitude, priority, severity, issue_description")
         .neq("status", "Completed")
         .execute()
-    )
+    ))
 
     return res.data or []
 
