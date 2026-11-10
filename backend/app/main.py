@@ -206,7 +206,7 @@ async def analyze(
     title: str | None = Form(default=None),
     text: str | None = Form(default=None),
     image: UploadFile | None = File(default=None),
-    building: str | None = Form(default=None),
+    floor: int | None = Form(default=None),
     room: str | None = Form(default=None),
     uuid: str | None = Form(default=None),
     latitude: float | None = Form(default=None),
@@ -223,31 +223,41 @@ async def analyze(
     if longitude is not None and not -180 <= longitude <= 180:
         raise HTTPException(status_code=422, detail="Longitude must be between -180 and 180.")
 
-    if "warrenwinarko" not in (text or ""): #only for testing purposes, remove this in production
-        # Fetch location data from DB
-        location_data = db.get_building(building) if building else None
-
-        if building and location_data is None:
-            location_data = db.get_building("The whole school")
-
-        if location_data and latitude is not None and longitude is not None :
-            check_loc = locate_user_one_building(
-                latitude=latitude,
-                longitude=longitude,
-                polygon_data=location_data.get("polygon_data"),  # Must pass this!
-                name=location_data.get("feature_name", building),
-            )
-        else:
-            raise HTTPException(
-                status_code=422, detail="Please provide a valid building and coordinates."
-            )
-
-        # Now check_loc["zone"] will safely be "building", "near_building", or "outside"
-        if check_loc["zone"] == "outside":
+    if "warrenwinarko" not in (text or ""):  # Remove this test bypass in production
+        if floor is None or latitude is None or longitude is None:
             raise HTTPException(
                 status_code=422,
-                detail=f"You are not at {building}. Please be at the location.",
+                detail="Please provide a floor and latitude/longitude.",
             )
+
+        zones = db.get_zones_on_floor(floor)
+        if not zones:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No mapped areas are configured for floor {floor}.",
+            )
+
+        check_loc = locate_user_one_building(
+            latitude=latitude,
+            longitude=longitude,
+            floor=floor,
+            zones=zones,
+        )
+
+        if check_loc["zone"] == "ambiguous":
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": check_loc["message"],
+                    "matching_areas": check_loc["buildings"],
+                },
+            )
+
+    if check_loc["zone"] != "building":
+        raise HTTPException(status_code=422, detail=check_loc["message"])
+
+    # Use the polygon match as the resolved building/area.
+    building = check_loc["buildings"][0]
 
     image_bytes = None
     mime_type = None

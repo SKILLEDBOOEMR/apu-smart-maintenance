@@ -212,14 +212,14 @@ dialog::backdrop{background:rgba(10,18,32,.58)}
       <div class="err hide" id="imgerr"></div>
     </div>
     <div class="row">
-      <div><label for="building">Building</label>
-        <select id="building"><option value="">Choose a building</option></select></div>
-      <div><label for="room">Room <span class="opt">(optional)</span></label>
+      <div><label for="floor">Floor</label>
+        <input type="number" id="floor" step="1" required placeholder="e.g. 5"></div>
+      <div><label for="room">Location details<span class="opt">(optional)</span></label>
         <input type="text" id="room" placeholder="e.g. B-28"></div>
     </div>
     <div><label for="text">Anything else we should know? <span class="opt">(optional)</span></label>
       <textarea id="text" placeholder="e.g. The tap has been dripping since Monday."></textarea></div>
-    <label class="chk"><input type="checkbox" id="loc"><span>Share my location so staff can find the spot faster (required)<br><span class="hint" id="lochint">The report API requires your location to confirm the selected building.</span></span></label>
+    <label class="chk"><input type="checkbox" id="loc"><span>Share my location so staff can find the spot faster (required)<br><span class="hint" id="lochint">Your floor and location are used to find the mapped area.</span></span></label>
     <div><button class="btn" id="send" disabled>Send report</button>
       <div class="hint" id="sendhint" style="margin-top:6px">Add a photo to send your report.</div>
       <div class="err hide" id="senderr"></div></div>
@@ -518,22 +518,19 @@ $("reportIssueButton").onclick = () => {
   $("myRequestsButton").classList.add("alt");
 };
 
-// ---------- buildings dropdown ----------
+// ---------- admin building filter ----------
 async function loadBuildings(){
-  const selects = [$("building"), $("fb")];
+  const select = $("fb");
   try {
     const list = await apiRequest("/buildings");
     if (!Array.isArray(list)) throw new Error("The API returned an invalid building list.");
-    for (const sel of selects) {
-      sel.replaceChildren(new Option(sel.id === "building" ? "Choose a building" : "All buildings", ""));
-      list.forEach(item => {
-        const name = typeof item === "string" ? item : item.name;
-        if (name) sel.add(new Option(name, name));
-      });
-    }
-    if (!list.length) $("building").add(new Option("No buildings available", ""));
+    select.replaceChildren(new Option("All buildings", ""));
+    list.forEach(item => {
+      const name = typeof item === "string" ? item : item.name;
+      if (name) select.add(new Option(name, name));
+    });
   } catch (x) {
-    $("building").replaceChildren(new Option("Could not load buildings", ""));
+    select.replaceChildren(new Option("Could not load buildings", ""));
     $("senderr").textContent = x.message;
     $("senderr").classList.remove("hide");
   }
@@ -542,12 +539,14 @@ async function loadBuildings(){
 // ---------- student form ----------
 let file = null;
 function updateSend(){
-  const canSend = !!file && !!$("building").value && !!coords;
+  const floorValue = $("floor").value.trim();
+  const validFloor = floorValue !== "" && Number.isSafeInteger(Number(floorValue));
+  const canSend = !!file && validFloor && !!coords;
   $("send").disabled = !canSend;
-  $("sendhint").textContent = !file ? "Add a photo to send your report." : ! $("building").value ? "Choose a building to continue." : !coords ? "Share your location to send your report." : "";
+  $("sendhint").textContent = !file ? "Add a photo to send your report." : !validFloor ? "Enter a whole-number floor to continue." : !coords ? "Share your location to send your report." : "";
   $("sendhint").classList.toggle("hide", canSend);
 }
-$("building").addEventListener("change", updateSend);
+$("floor").addEventListener("input", updateSend);
 $("img").onchange = e => {
   const f = e.target.files[0], err = $("imgerr");
   err.classList.add("hide"); file = null;
@@ -567,7 +566,7 @@ $("img").onchange = e => {
 let coords = null;
 $("loc").onchange = e => {
   coords = null;
-  if (!e.target.checked) { $("lochint").textContent = "The report API requires your location to confirm the selected building."; updateSend(); return; }
+  if (!e.target.checked) { $("lochint").textContent = "Your floor and location are used to find the mapped area."; updateSend(); return; }
   $("lochint").textContent = "Finding you…";
   if (!navigator.geolocation) { e.target.checked = false; $("lochint").textContent = "Your browser can’t share location, which is required to send this report."; updateSend(); return; }
   navigator.geolocation.getCurrentPosition(
@@ -582,14 +581,14 @@ $("f").onsubmit = async e => {
   if (!file) return;
   const fd = new FormData();                        // no Content-Type header: the browser sets the boundary
   fd.append("image", file);
-  const text = $("text").value.trim(), building = $("building").value, room = $("room").value.trim();
-  if (!building || !coords) {
-    $("senderr").textContent = "Choose a building and share your location before sending.";
+  const text = $("text").value.trim(), floor = $("floor").value.trim(), room = $("room").value.trim();
+  if (!floor || !Number.isSafeInteger(Number(floor)) || !coords) {
+    $("senderr").textContent = "Enter a valid floor and share your location before sending.";
     $("senderr").classList.remove("hide");
     return;
   }
   if (text) fd.append("text", text);                // empty fields are left out, not sent as ""
-  fd.append("building", building);
+  fd.append("floor", floor);
   if (room) fd.append("room", room);
   fd.append("latitude", coords.lat);
   fd.append("longitude", coords.lng);
@@ -608,7 +607,7 @@ $("f").onsubmit = async e => {
     if (user && user.role === "student" && user.uuid) await loadStudentRequests();
     $("donetxt").textContent = duplicate
       ? "Thanks for reporting this. A similar issue has already been reported, and your report has been added to it."
-      : "Your report is with the facilities team" + (building ? " for " + building : "") + (room ? ", room " + room : "") + ". You don’t need to do anything else.";
+      : "Your report is with the facilities team" + (floor ? " for floor " + floor : "") + (room ? ", " + room : "") + ". You don’t need to do anything else.";
     $("f").classList.add("hide"); $("done").classList.remove("hide"); $("done").focus();
   } catch (x) {
     err.textContent = x.message;
@@ -619,7 +618,7 @@ $("f").onsubmit = async e => {
 $("again").onclick = () => {
   $("f").reset(); file = null; coords = null;
   $("dropin").innerHTML = '<strong>Tap to take or choose a photo</strong><div class="hint">JPG or PNG, up to 5 MB</div>';
-  $("lochint").textContent = "The report API requires your location to confirm the selected building.";
+  $("lochint").textContent = "Your floor and location are used to find the mapped area.";
   $("senderr").classList.add("hide");
   $("done").classList.add("hide"); $("f").classList.remove("hide"); updateSend();
 };

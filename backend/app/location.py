@@ -13,37 +13,80 @@ NEAR_BUFFER = 0.0001
 # ---------------------------------------------------------------------------
 # The feature
 # ---------------------------------------------------------------------------
-def locate_user_one_building(latitude, longitude, polygon_data, name=None, tolerance=NEAR_BUFFER):
-    """
-    Checks the point against ONE polygon (a building, or the whole campus).
-    Returns:
-      zone:      "building" | "near_building" | "outside"
-      buildings: [name] if the point is in or beside the polygon, else []
-      message:   human-readable summary
-    """
-    label = name or "the selected area"
+def locate_user_one_building(
+    latitude: float,
+    longitude: float,
+    floor: int,
+    zones: list[dict],
+    tolerance: float = NEAR_BUFFER,
+) -> dict:
+    """Find zones on the given floor that contain or are near the coordinates."""
+    if not -90 <= latitude <= 90:
+        raise ValueError("Latitude must be between -90 and 90.")
+    if not -180 <= longitude <= 180:
+        raise ValueError("Longitude must be between -180 and 180.")
+    if tolerance < 0:
+        raise ValueError("Tolerance cannot be negative.")
 
-    if not polygon_data:
-        return {"zone": "outside", "buildings": [],
-                "message": f"No boundary data for {label}."}
+    point = Point(longitude, latitude)  # Shapely uses (longitude, latitude).
+    inside = []
+    nearby = []
 
-    data = json.loads(polygon_data) if isinstance(polygon_data, str) else polygon_data
-    poly = shape(data)
-    if not poly.is_valid:
-        poly = poly.buffer(0)
+    for zone in zones:
+        floor_min = int(zone["floor_min"])
+        floor_max = int(zone["floor_max"])
+        if not floor_min <= floor <= floor_max:
+            continue
 
-    point = Point(longitude, latitude)  # longitude first
+        polygon_data = zone["polygon_data"]
+        if isinstance(polygon_data, str):
+            polygon_data = json.loads(polygon_data)
 
-    if poly.covers(point):
-        return {"zone": "building", "buildings": [label],
-                "message": f"You are inside {label}."}
+        polygon = shape(polygon_data)
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        if polygon.is_empty:
+            raise ValueError(f"Invalid or empty polygon for {zone['feature_name']}.")
 
-    if poly.distance(point) <= tolerance:
-        return {"zone": "near_building", "buildings": [label],
-                "message": f"You are right next to {label}."}
+        name = zone["feature_name"]
+        if polygon.covers(point):
+            inside.append(name)
+        elif polygon.distance(point) <= tolerance:
+            nearby.append(name)
 
-    return {"zone": "outside", "buildings": [],
-            "message": f"You are not at {label}."}
+    if len(inside) == 1:
+        return {
+            "zone": "building",
+            "buildings": inside,
+            "message": f"You are inside {inside[0]} on floor {floor}.",
+        }
+
+    if len(inside) > 1:
+        return {
+            "zone": "ambiguous",
+            "buildings": inside,
+            "message": f"Your location matches multiple areas on floor {floor}.",
+        }
+
+    if len(nearby) == 1:
+        return {
+            "zone": "near_building",
+            "buildings": nearby,
+            "message": f"You are near {nearby[0]}, but not inside its mapped area.",
+        }
+
+    if len(nearby) > 1:
+        return {
+            "zone": "ambiguous",
+            "buildings": nearby,
+            "message": "Your location is near multiple areas; the location is uncertain.",
+        }
+
+    return {
+        "zone": "outside",
+        "buildings": [],
+        "message": f"No mapped area was found at these coordinates on floor {floor}.",
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -91,6 +91,8 @@ def reset_client() -> None:
         del _local.client
 
 
+
+
 def with_retry(fn):
     """Run fn(); on a dead connection rebuild the client and try once more."""
     try:
@@ -217,6 +219,17 @@ def list_building(feature_name: Optional[str] = None) -> list:
     res = query.execute()
     
     return res.data
+
+def get_zones_on_floor(floor: int) -> list[dict]:
+    res = (
+        get_client()
+        .table(BUILDING_TABLE)
+        .select("feature_name, polygon_data, floor_min, floor_max")
+        .lte("floor_min", floor)
+        .gte("floor_max", floor)
+        .execute()
+    )
+    return res.data or []
 
 # ---------------------------------------------------------------------------
 # WORK ORDERS: create / read / update
@@ -373,6 +386,17 @@ def fetch_location_of_reports_not_done() -> list[dict]:
         .execute()
     ))
 
+    return res.data or []
+
+def get_zones_on_floor(floor: int) -> list[dict]:
+    res = (
+        get_client()
+        .table("map_coordinates")
+        .select("feature_name, polygon_data, floor_min, floor_max")
+        .lte("floor_min", floor)
+        .gte("floor_max", floor)
+        .execute()
+    )
     return res.data or []
 
 # ---------------------------------------------------------------------------
