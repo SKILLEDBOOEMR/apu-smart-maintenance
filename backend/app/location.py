@@ -13,6 +13,7 @@ NEAR_BUFFER = 0.0001
 # ---------------------------------------------------------------------------
 # The feature
 # ---------------------------------------------------------------------------
+
 def locate_user_one_building(
     latitude: float,
     longitude: float,
@@ -53,6 +54,19 @@ def locate_user_one_building(
             inside.append(name)
         elif polygon.distance(point) <= tolerance:
             nearby.append(name)
+
+    def prefer_specific_zone(candidates: list[str]) -> list[str]:
+        if len(candidates) <= 1:
+            return candidates
+
+        specific = [
+            name for name in candidates
+            if name.strip().casefold() != "the whole school"
+        ]
+        return specific or candidates
+
+    inside = prefer_specific_zone(inside)
+    nearby = prefer_specific_zone(nearby)
 
     if len(inside) == 1:
         return {
