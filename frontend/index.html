@@ -47,7 +47,7 @@ main{max-width:1100px;margin:0 auto;padding:clamp(20px,4vw,40px) clamp(16px,4vw,
 .form{display:grid;gap:0px;margin-top:24px;max-width:640px}
 label,.lbl{font-weight:600;display:block;margin-bottom:6px}
 .opt{font-weight:400;color:var(--mute)}
-input[type=text], input[type=email],input[type=password],select,textarea{width:100%;padding:11px 12px;margin:0 0 10px 0;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+input[type=text], input[type=email],input[type=password],input[type=number],select,textarea{width:100%;padding:11px 12px;margin:0 0 10px 0;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 textarea{min-height:90px;resize:vertical}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:560px){.row{grid-template-columns:1fr}}
@@ -212,9 +212,9 @@ dialog::backdrop{background:rgba(10,18,32,.58)}
       <div class="err hide" id="imgerr"></div>
     </div>
     <div class="row">
-      <div><label for="floor">Floor</label>
+      <div><label for="floor">Floor<span class="opt">(optional)</span></label>
         <input type="number" id="floor" step="1" required placeholder="e.g. 5"></div>
-      <div><label for="room">Location details<span class="opt">(optional)</span></label>
+      <div><label for="room">Location details</label>
         <input type="text" id="room" placeholder="e.g. B-28"></div>
     </div>
     <div><label for="text">Anything else we should know? <span class="opt">(optional)</span></label>
