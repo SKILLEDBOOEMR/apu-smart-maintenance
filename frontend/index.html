@@ -711,7 +711,7 @@ async function showWorkOrderDetails(issue){
     if (requestId !== activeDetailRequest || !dialog.open) return;
     const fields = [
       ["Building", issue.building],
-      ["Room", issue.room],
+      ["Location Detail", issue.room],
       ["Priority", issue.urgency],
       ["Status", issue.status],
       ["Category", issue.category || detail.category || "Not provided"],
