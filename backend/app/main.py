@@ -285,7 +285,13 @@ async def analyze(
 
     data = analysis.model_dump()
 
-    dup = db.find_duplicate(building, analysis.category) if building else None
+    dup = db.find_duplicate(
+    building=building,
+    floor=floor,
+    category=analysis.category,
+    latitude=latitude,
+    longitude=longitude,
+    ) if building else None
     if dup:
         db.add_duplicate_report(dup)
         db.add_to_student_reports(uuid, dup["id"]) if uuid else None

@@ -3,6 +3,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from math import atan2, cos, radians, sin, sqrt
 
 import httpx
 from supabase import Client, create_client
@@ -339,23 +340,58 @@ def update_work_order_status(work_order_id: str, new_status: str) -> Optional[di
 # ---------------------------------------------------------------------------
 # DUPLICATES
 # ---------------------------------------------------------------------------
-def find_duplicate(building: str, category: str, days: int = 7) -> Optional[dict]:
+def _distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    earth_radius_m = 6_371_000
+    lat1_rad, lat2_rad = radians(lat1), radians(lat2)
+    delta_lat = radians(lat2 - lat1)
+    delta_lon = radians(lon2 - lon1)
+
+    a = (
+        sin(delta_lat / 2) ** 2
+        + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon / 2) ** 2
+    )
+    return earth_radius_m * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+
+def find_duplicate(
+    building: str,
+    floor: int,
+    category: str,
+    latitude: float,
+    longitude: float,
+    days: int = 7,
+    radius_m: float = 20,
+) -> Optional[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    
-    # Normalize inputs to prevent case/whitespace mismatches
-    clean_building = building.strip().title() if building else ""
-    clean_category = category.strip().title() if category else ""
 
     res = (
-        get_client().table(TABLE).select("*")
-        .ilike("building", clean_building) # Case-insensitive match
-        .ilike("category", clean_category)
-        .neq("status", "Resolved")
+        get_client()
+        .table(TABLE)
+        .select("id, building, floor, category, latitude, longitude, status, created_at, report_count, severity")
+        .ilike("building", building.strip())
+        .eq("floor", floor)
+        .ilike("category", category.strip())
+        .neq("status", "Completed")
+        .neq("status", "Cancelled")
         .gte("created_at", cutoff)
-        .order("created_at", desc=True).limit(1)
         .execute()
     )
-    return res.data[0] if res.data else None
+
+    nearby = []
+    for work_order in res.data or []:
+        old_lat = work_order.get("latitude")
+        old_lon = work_order.get("longitude")
+        if old_lat is None or old_lon is None:
+            continue
+
+        distance = _distance_meters(latitude, longitude, old_lat, old_lon)
+        if distance <= radius_m:
+            nearby.append((distance, work_order))
+
+    if not nearby:
+        return None
+
+    return min(nearby, key=lambda match: match[0])[1]
 
 def add_duplicate_report(work_order: dict) -> Optional[dict]:
     """Another person reported the same issue: bump the counter and re-check priority."""
