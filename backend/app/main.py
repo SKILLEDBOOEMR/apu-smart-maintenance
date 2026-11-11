@@ -58,7 +58,7 @@ def _building_sort_key(name: str):
         m = re.search(r"\d+", n)
         return (1, "", int(m.group()) if m else 1)    # Dorm, Dorm 2, Dorm 3 ... (10 after 9)
     if "whole" in low:
-        return (3, low, 0)                            # "The whole school" always last
+        return (3, low, 0)                            # "school_campus" always last
     return (2, low, 0)     
 
 @app.get("/health")
@@ -78,7 +78,7 @@ def update_work_order_status(work_order_id: str, new_status: str, uuid: str | No
 @app.get("/buildings") #universal
 def buildings():
     names = [b["feature_name"] for b in db.list_building() if b.get("feature_name")]
-    names = [n for n in names if n.strip().lower() != "the whole school"]
+    names = [n for n in names if n.strip().lower() != "school_campus"]
     return sorted(set(names), key=_building_sort_key)
 
 @app.get("/work-orders") #staff
@@ -124,7 +124,7 @@ def map(uuid: uuid.UUID | None = None):
         if db.verify_user_role(str(uuid) if uuid else None) != "admin":
             raise HTTPException(status_code=403, detail="Access denied. Only staff can view work orders.")
         center = [3.056007378655162, 101.69990037965738]
-        school_polygon_data = db.get_building("The whole school")
+        school_polygon_data = db.get_building("school_campus")
         if not school_polygon_data or not school_polygon_data.get("polygon_data"):
             raise HTTPException(status_code=404, detail="School boundary data is not available.")
         unfinished_orders_locations = db.fetch_location_of_reports_not_done()

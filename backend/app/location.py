@@ -61,7 +61,7 @@ def locate_user_one_building(
 
         specific = [
             name for name in candidates
-            if name.strip().casefold() != "the whole school"
+            if name.strip().casefold() != "school_campus"
         ]
         return specific or candidates
 
