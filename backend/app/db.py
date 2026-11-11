@@ -156,6 +156,7 @@ def build_row(
     latitude: Optional[float],
     longitude: Optional[float],
     image_url: Optional[str] = None,
+    floor: Optional[int] = None,
     image_path: Optional[str] = None,
     location_status: Optional[str] = None,
     ai_confidence: Optional[float] = None,
@@ -177,6 +178,7 @@ def build_row(
         "issue_description": text or analysis.get("title") or "(photo only report)",
         "title": title or analysis.get("title") or "Maintenance Request",
         "building": building or "Unknown",
+        "floor" : floor,
         "room": room or "Unknown",
         "category": category,
         "severity": severity.capitalize() if severity else "Medium", # Ensures severity is capitalized too ('High', 'Low', etc.)
@@ -255,7 +257,7 @@ def list_work_orders(
     limit: int = 20,
 ) -> dict:
     """For the admin dashboard table.""" #have location_status after room
-    query = get_client().table(TABLE).select("id, title:issue_description, category, severity,  priority, status, building, room, assigned_team_id, report_count, email_status, email_sent_at, created_at  ", count="exact")
+    query = get_client().table(TABLE).select("id, title:issue_description, category, severity,  priority, status, building, room, assigned_team_id, report_count, email_status, email_sent_at, created_at, floor  ", count="exact")
     for column, value in (("status", status), ("priority", priority),
                           ("category", category), ("building", building)):
         if value:
@@ -268,7 +270,7 @@ def list_work_orders(
     return {"page": page, "limit": limit, "total": res.count, "work_orders": res.data}
 
 def view_individual_work_order(work_order_id) -> Optional[dict]:
-    res = get_client().table(TABLE).select("issue_description, image_url, repair_steps, latitude, longitude, updated_at:created_at").eq("id", work_order_id).limit(1).execute()
+    res = get_client().table(TABLE).select("issue_description, image_url, repair_steps, latitude, longitude, updated_at:created_at, floor").eq("id", work_order_id).limit(1).execute()
     return res.data[0] if res.data else None
 
 def list_work_orders_by_student_id(id: uuid.UUID,page: int = 1, limit: int = 20,) -> list[dict]:

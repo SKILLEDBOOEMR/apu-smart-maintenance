@@ -301,6 +301,7 @@ async def analyze(
         title=data.get("title"), 
         text=data.get("problem_summary"),
         building=building,
+        floor = floor,
         room=room,
         latitude=latitude,
         longitude=longitude,

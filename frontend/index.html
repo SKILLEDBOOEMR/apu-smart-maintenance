@@ -680,6 +680,7 @@ async function loadWorkOrders(){
       title: item.title || item.issue_description || item.category || "Maintenance report",
       building: item.building || "Not given",
       room: item.room || "–",
+      floor: item.floor || "–",
       category: item.category,
       urgency: item.priority || item.severity || "Medium",
       status: normalizeStatus(item.status),
@@ -712,6 +713,7 @@ async function showWorkOrderDetails(issue){
     const fields = [
       ["Building", issue.building],
       ["Location Detail", issue.room],
+      ["Floor", issue.floor],
       ["Priority", issue.urgency],
       ["Status", issue.status],
       ["Category", issue.category || detail.category || "Not provided"],
@@ -803,7 +805,7 @@ function renderAdmin(){
     const cell = (html) => { const td = document.createElement("td"); td.innerHTML = html; return td; };
     const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
     tr.append(cell("<strong>" + esc(i.title) + "</strong>"),
-      cell(esc(i.building) + "<small>" + esc(i.room) + "</small>"),
+      cell(esc(i.building) + "<small>" + esc(i.room) + " · Floor " + esc(i.floor) + "</small>"),
       cell('<span class="pill ' + (urgCls[i.urgency] || "p-med") + '">' + esc(i.urgency) + "</span>"));
     const statusCell = document.createElement("td");
     const statusButton = document.createElement("button");
