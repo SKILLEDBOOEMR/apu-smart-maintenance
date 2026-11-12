@@ -360,7 +360,7 @@ def notify_maintenace_teams(work_order_id: uuid.UUID | str) -> None:
     )
 
     # Only update the work order after Gmail accepts the message.
-    _send_gmail(email, subject, body)
+    # _send_gmail(email, subject, body)
 
     updated = update_work_order(
         work_order_id,
