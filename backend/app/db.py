@@ -6,7 +6,7 @@ from typing import Optional
 from math import atan2, cos, radians, sin, sqrt
 import smtplib
 from email.message import EmailMessage
-
+import resend
 import httpx
 from supabase import Client, create_client
 
@@ -57,24 +57,22 @@ TEAM_BY_CATEGORY = {
 _local = threading.local()
 RETRYABLE = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout)
 
-def _send_gmail(to_email: str, subject: str, body: str) -> None:
-    sender = os.environ.get("GMAIL_ADDRESS")
-    app_password = os.environ.get("GMAIL_APP_PASSWORD")
-    if not sender or not app_password:
-        raise RuntimeError("GMAIL_ADDRESS and GMAIL_APP_PASSWORD must be configured.")
-
-    message = EmailMessage()
-    message["From"] = sender
-    message["To"] = to_email
-    message["Subject"] = subject
-    message.set_content(body)
-
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
-        smtp.ehlo()
-        smtp.starttls()
-        smtp.ehlo()
-        smtp.login(sender, app_password)
-        smtp.send_message(message)
+def _send_gmail(to_email: str, subject: str, body: str):
+    if not resend.api_key:
+        raise RuntimeError("RESEND_API_KEY must be configured.")
+    
+    params = {
+        "from": "onboarding@resend.dev",  # Use your verified domain later if you have one
+        "to": [to_email],
+        "subject": subject,
+        "html": f"<p>{body}</p>",
+    }
+    
+    try:
+        response = resend.Emails.send(params)
+        return response
+    except Exception as e:
+        raise RuntimeError(f"Failed to send email via Resend API: {e}")
 
 def _build(url: str, key: str) -> Client:
     """One client per thread, HTTP/1.1 only, sane timeouts."""
