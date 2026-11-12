@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from math import atan2, cos, radians, sin, sqrt
+import smtplib
+from email.message import EmailMessage
 
 import httpx
 from supabase import Client, create_client
@@ -55,6 +57,24 @@ TEAM_BY_CATEGORY = {
 _local = threading.local()
 RETRYABLE = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadTimeout)
 
+def _send_gmail(to_email: str, subject: str, body: str) -> None:
+    sender = os.environ.get("GMAIL_ADDRESS")
+    app_password = os.environ.get("GMAIL_APP_PASSWORD")
+    if not sender or not app_password:
+        raise RuntimeError("GMAIL_ADDRESS and GMAIL_APP_PASSWORD must be configured.")
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.set_content(body)
+
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(sender, app_password)
+        smtp.send_message(message)
 
 def _build(url: str, key: str) -> Client:
     """One client per thread, HTTP/1.1 only, sane timeouts."""
@@ -303,30 +323,59 @@ def add_to_student_reports(student_id: uuid.UUID, work_order_id: uuid.UUID) -> O
     res = client.table(STUDENT_TABLE).insert(row).execute()
     return res.data[0] if res.data else None
 
-def notify_maintenace_teams(work_order_id: uuid.UUID) -> None:
-    """Notify the maintenance teams about a new work order."""
-    # Fetch the work order details
+def notify_maintenace_teams(work_order_id: uuid.UUID | str) -> None:
+    """Email the maintenance team assigned to a work order."""
     work_order = get_work_order(work_order_id)
-    if not work_order:
-        raise ValueError("Work order not found.")
+    if work_order is None:
+        raise ValueError(f"Work order {work_order_id} not found.")
 
-    work_order_category = get_client().table(TABLE).select("category").eq("id", work_order_id).execute()
-    fetch_maintenance_team_email = get_client().table("maintenance_teams").select("email, id").eq("category", work_order_category).execute() if work_order_category.data else None 
-    email = fetch_maintenance_team_email.data[0]['email'] if fetch_maintenance_team_email and fetch_maintenance_team_email.data else None
+    category = work_order.get("category")
+    if not category:
+        raise ValueError(f"Work order {work_order_id} has no category.")
 
-    if fetch_maintenance_team_email and email:
-        # Here you would implement the logic to send an email to the maintenance team.
-        # This could involve using an email service or SMTP server.
-        # For demonstration purposes, we'll just print a message.
-        print(f"Email sent to {email} about work order {work_order_id}.")
+    team_result = (
+        get_client()
+        .table("maintenance_teams")
+        .select("id, email")
+        .eq("category", category)
+        .limit(1)
+        .execute()
+    )
 
-    #updating the email_status and email_sent_at fields in the work_orders table
-    update_work_order(work_order_id, {"email_status": "Sent", "email_sent_at": datetime.now(timezone.utc).isoformat(), "assigned_team_id": fetch_maintenance_team_email.data[0]['id'] if fetch_maintenance_team_email and fetch_maintenance_team_email.data else None})
+    if not team_result.data:
+        raise ValueError(f"No maintenance team found for category {category!r}.")
 
-    # Here you would implement the logic to notify the maintenance teams.
-    # This could involve sending emails, push notifications, or any other form of communication.
-    # For demonstration purposes, we'll just print a message.
-    print(f"Admin notified maintenance teams about work order {work_order_id}.")
+    team = team_result.data[0]
+    email = team.get("email")
+    if not email:
+        raise ValueError(f"No email address configured for category {category!r}.")
+
+    title = work_order.get("title") or work_order.get("issue_description") or str(work_order_id)
+    subject = f"New maintenance work order: {title}"
+    body = (
+        f"A new work order has been assigned to your team.\n\n"
+        f"Work order: {work_order_id}\n"
+        f"Category: {category}\n"
+        f"Building: {work_order.get('building') or 'Not specified'}\n"
+        f"Room: {work_order.get('room') or 'Not specified'}\n"
+        f"Issue: {work_order.get('issue_description') or 'Not specified'}\n"
+    )
+
+    # Only update the work order after Gmail accepts the message.
+    _send_gmail(email, subject, body)
+
+    updated = update_work_order(
+        work_order_id,
+        {
+            "email_status": "Sent",
+            "email_sent_at": datetime.now(timezone.utc).isoformat(),
+            "assigned_team_id": team["id"],
+        },
+    )
+    if updated is None:
+        raise RuntimeError(
+            f"Email was sent to {email}, but work order {work_order_id} could not be updated."
+        )
 
 def update_work_order_status(work_order_id: str, new_status: str) -> Optional[dict]:
     """Update the status of a work order."""
@@ -436,6 +485,10 @@ def get_zones_on_floor(floor: int) -> list[dict]:
         .execute()
     )
     return res.data or []
+
+# ---------------------------------------------------------------------------
+# map
+# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # SMOKE TEST:  python -m app.supabase   (from backend\)
